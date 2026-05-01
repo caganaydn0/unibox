@@ -1,0 +1,38 @@
+version: "3.9"
+
+services:
+  # PostgreSQL + pgvector — Veritabanı + vektör araması
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: unibox_postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: unibox
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  # Ollama — Yerel LLM + Embedding
+  # Chat modeli: docker exec unibox_ollama ollama pull llama3.1:8b
+  # Embedding modeli: docker exec unibox_ollama ollama pull nomic-embed-text
+  ollama:
+    image: ollama/ollama:latest
+    container_name: unibox_ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    # GPU varsa:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - capabilities: [gpu]
+
+volumes:
+  postgres_data:
+  ollama_data:
