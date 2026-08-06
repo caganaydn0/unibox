@@ -3,9 +3,24 @@
 @tailwind utilities;
 
 :root {
-  --sidebar-width: 240px;
+  --sidebar-width: 256px;
 }
 
 body {
-  @apply bg-slate-50 text-gray-900;
+  @apply bg-slate-100 text-gray-900;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-slate-300 rounded-full;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-slate-400;
 }
