@@ -9,10 +9,14 @@ import logging
 
 from sqlalchemy import select
 
+from datetime import datetime
+
 from app.config import settings
 from app.core.ws_manager import ws_manager
 from app.db.models.incoming_email import IncomingEmail, IncomingEmailStatus
+from app.db.models.system_settings import SystemMode
 from app.db.session import AsyncSessionLocal
+from app.services import system_settings_service
 from app.services.intent_detector import detect_intent
 from app.services.llm_provider import llm
 from app.services.rag_engine import RagEngine
@@ -234,23 +238,48 @@ class EmailAnalyzer:
                 ie.reply_subject = reply_subject
                 ie.reply_body = reply_body
 
-                # ANALYZING → REPLY_GENERATED → PENDING_REVIEW
-                ie.status = IncomingEmailStatus.PENDING_REVIEW
-                await session.commit()
+                mode = await system_settings_service.get_mode(session)
 
-                logger.info(
-                    "Email analiz tamamlandı: id=%s, intent=%s, confidence=%.2f",
-                    incoming_email_id, intent_result.intent_type, intent_result.confidence,
-                )
+                if mode == SystemMode.PILOT:
+                    # Pilot Modu: insan onayı olmadan direkt gönderim kuyruğuna
+                    ie.status = IncomingEmailStatus.APPROVED
+                    ie.auto_approved = True
+                    ie.reviewed_by = None
+                    ie.reviewed_at = datetime.utcnow()
+                    await session.commit()
 
-                # Admin'e bildir
-                await ws_manager.broadcast_to_admins({
-                    "type": "incoming_reply_ready",
-                    "id": incoming_email_id,
-                    "subject": ie.subject,
-                    "intent_type": ie.intent_type,
-                    "reply_subject": ie.reply_subject,
-                })
+                    logger.info(
+                        "Email analiz tamamlandı (Pilot Modu — otomatik onay): id=%s, intent=%s, confidence=%.2f",
+                        incoming_email_id, intent_result.intent_type, intent_result.confidence,
+                    )
+
+                    from app.tasks.queue import incoming_reply_queue
+                    await incoming_reply_queue.put(incoming_email_id)
+
+                    await ws_manager.broadcast_to_admins({
+                        "type": "incoming_email_auto_replied",
+                        "id": incoming_email_id,
+                        "subject": ie.subject,
+                        "intent_type": ie.intent_type,
+                        "reply_subject": ie.reply_subject,
+                    })
+                else:
+                    # Co-Pilot Modu: admin incelemesi bekler
+                    ie.status = IncomingEmailStatus.PENDING_REVIEW
+                    await session.commit()
+
+                    logger.info(
+                        "Email analiz tamamlandı: id=%s, intent=%s, confidence=%.2f",
+                        incoming_email_id, intent_result.intent_type, intent_result.confidence,
+                    )
+
+                    await ws_manager.broadcast_to_admins({
+                        "type": "incoming_reply_ready",
+                        "id": incoming_email_id,
+                        "subject": ie.subject,
+                        "intent_type": ie.intent_type,
+                        "reply_subject": ie.reply_subject,
+                    })
 
             except Exception as exc:
                 logger.error(

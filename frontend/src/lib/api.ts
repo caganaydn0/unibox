@@ -197,4 +197,13 @@ export const api = {
   // Logs
   listLogs: (limit = 100) =>
     request<import("@/types").EmailLog[]>(`/v1/logs/emails?limit=${limit}`),
+
+  // System Mode (Pilot / Co-Pilot)
+  getSystemMode: () =>
+    request<import("@/types").SystemModeConfig>("/v1/settings/system-mode"),
+  setSystemMode: (mode: import("@/types").SystemMode) =>
+    request<import("@/types").SystemModeConfig>("/v1/settings/system-mode", {
+      method: "PUT",
+      body: JSON.stringify({ mode }),
+    }),
 };

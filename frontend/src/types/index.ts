@@ -96,6 +96,16 @@ export interface IncomingEmail {
   fetched_at: string;
   updated_at: string;
   reply_sent_at: string | null;
+  auto_approved: boolean;
+}
+
+// Pilot Modu / Co-Pilot Modu
+export type SystemMode = "PILOT" | "CO_PILOT";
+
+export interface SystemModeConfig {
+  mode: SystemMode;
+  updated_by: string | null;
+  updated_at: string;
 }
 
 export interface UnifiedEmailItem {
@@ -148,6 +158,8 @@ export interface WsEvent {
     | "incoming_reply_sent"
     | "incoming_reply_failed"
     | "incoming_analysis_failed"
+    | "incoming_email_auto_replied"
+    | "system_mode_changed"
     | "ping"
     | "error";
   [key: string]: unknown;

@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { WsEvent } from "@/types";
+import type { SystemMode, WsEvent } from "@/types";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { api } from "@/lib/api";
 
@@ -16,6 +16,8 @@ interface WsContextValue {
   subscribe: (handler: (event: WsEvent) => void) => () => void;
   pendingIncomingCount: number;
   pendingDraftCount: number;
+  systemMode: SystemMode | null;
+  refreshSystemMode: () => void;
 }
 
 const WsContext = createContext<WsContextValue | null>(null);
@@ -24,6 +26,7 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
   const handlers = useRef<Set<(e: WsEvent) => void>>(new Set());
   const [pendingIncomingCount, setPendingIncomingCount] = useState(0);
   const [pendingDraftCount, setPendingDraftCount] = useState(0);
+  const [systemMode, setSystemMode] = useState<SystemMode | null>(null);
   const [wsUrl, setWsUrl] = useState("");
 
   const refreshPendingCount = useCallback(() => {
@@ -40,6 +43,13 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
       .catch(() => {});
   }, []);
 
+  const refreshSystemMode = useCallback(() => {
+    api
+      .getSystemMode()
+      .then((data) => setSystemMode(data.mode))
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     const token = localStorage.getItem("unibox_token");
     if (token) {
@@ -50,7 +60,8 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
     }
     refreshPendingCount();
     refreshDraftCount();
-  }, [refreshPendingCount, refreshDraftCount]);
+    refreshSystemMode();
+  }, [refreshPendingCount, refreshDraftCount, refreshSystemMode]);
 
   const handleWsEvent = useCallback(
     (event: WsEvent) => {
@@ -58,7 +69,8 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
         event.type === "incoming_email_received" ||
         event.type === "incoming_reply_ready" ||
         event.type === "incoming_reply_sent" ||
-        event.type === "incoming_analysis_failed"
+        event.type === "incoming_analysis_failed" ||
+        event.type === "incoming_email_auto_replied"
       ) {
         refreshPendingCount();
       }
@@ -70,9 +82,12 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
       ) {
         refreshDraftCount();
       }
+      if (event.type === "system_mode_changed") {
+        refreshSystemMode();
+      }
       handlers.current.forEach((h) => h(event));
     },
-    [refreshPendingCount, refreshDraftCount]
+    [refreshPendingCount, refreshDraftCount, refreshSystemMode]
   );
 
   useWebSocket(wsUrl, { onMessage: handleWsEvent, enabled: !!wsUrl });
@@ -85,7 +100,15 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <WsContext.Provider value={{ subscribe, pendingIncomingCount, pendingDraftCount }}>
+    <WsContext.Provider
+      value={{
+        subscribe,
+        pendingIncomingCount,
+        pendingDraftCount,
+        systemMode,
+        refreshSystemMode,
+      }}
+    >
       {children}
     </WsContext.Provider>
   );

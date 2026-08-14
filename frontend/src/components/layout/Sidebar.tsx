@@ -9,6 +9,7 @@ import {
   Inbox,
   BookOpen,
   ClipboardList,
+  Settings,
   LogOut,
 } from "lucide-react";
 import Image from "next/image";
@@ -17,7 +18,7 @@ import { useWsContext } from "@/contexts/WsContext";
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { pendingIncomingCount, pendingDraftCount } = useWsContext();
+  const { pendingIncomingCount, pendingDraftCount, systemMode } = useWsContext();
 
   const handleLogout = () => {
     localStorage.removeItem("unibox_token");
@@ -32,6 +33,7 @@ export function Sidebar() {
     { href: "/incoming", label: "Gelen E-postalar", icon: Inbox, badge: pendingIncomingCount },
     { href: "/knowledge-base", label: "Bilgi Tabanı", icon: BookOpen, badge: 0 },
     { href: "/logs", label: "Gönderim Geçmişi", icon: ClipboardList, badge: 0 },
+    { href: "/settings", label: "Ayarlar", icon: Settings, badge: 0 },
   ];
 
   return (
@@ -47,6 +49,28 @@ export function Sidebar() {
           priority
         />
       </div>
+
+      {/* Aktif Mod Rozeti */}
+      {systemMode && (
+        <div className="px-5 py-2.5 border-b border-white/5">
+          <div
+            className={clsx(
+              "flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold",
+              systemMode === "PILOT"
+                ? "bg-red-500/15 text-red-300"
+                : "bg-emerald-500/15 text-emerald-300"
+            )}
+          >
+            <span
+              className={clsx(
+                "w-1.5 h-1.5 rounded-full",
+                systemMode === "PILOT" ? "bg-red-400" : "bg-emerald-400"
+              )}
+            />
+            {systemMode === "PILOT" ? "Pilot Modu Aktif" : "Co-Pilot Modu Aktif"}
+          </div>
+        </div>
+      )}
 
       {/* Navigasyon */}
       <nav className="flex-1 overflow-y-auto py-5 px-3 space-y-6">

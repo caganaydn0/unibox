@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1 import auth, chat, dashboard, email_drafts, incoming_emails, knowledge, logs, monitor
+from app.api.v1 import auth, chat, dashboard, email_drafts, incoming_emails, knowledge, logs, monitor, settings
 
 router = APIRouter()
 
@@ -12,3 +12,4 @@ router.include_router(knowledge.router, prefix="/knowledge", tags=["knowledge"])
 router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 router.include_router(monitor.router, prefix="/monitor", tags=["monitor"])
 router.include_router(logs.router, prefix="/logs", tags=["logs"])
+router.include_router(settings.router, prefix="/settings", tags=["settings"])

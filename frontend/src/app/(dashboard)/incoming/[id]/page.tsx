@@ -132,6 +132,11 @@ export default function IncomingDetailPage() {
         >
           {statusCfg.label}
         </span>
+        {email.auto_approved && (
+          <span className="inline-flex items-center rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700">
+            Otomatik Onaylandı (Pilot Modu)
+          </span>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

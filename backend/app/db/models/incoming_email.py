@@ -105,6 +105,8 @@ class IncomingEmail(Base):
     admin_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     reviewed_by: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # Pilot Modu: insan incelemesi olmadan otomatik onaylandı mı (KVKK/denetim izi)
+    auto_approved: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Gönderim takibi
     send_attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

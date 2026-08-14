@@ -5,6 +5,7 @@ from app.db.models.email_log import EmailLog
 from app.db.models.incoming_email import IncomingEmail, IncomingEmailStatus, VALID_INCOMING_TRANSITIONS
 from app.db.models.knowledge_document import KnowledgeDocument, ProcessingStatus
 from app.db.models.request_intent import RequestIntent
+from app.db.models.system_settings import SystemSettings, SystemMode
 
 __all__ = [
     "Conversation",
@@ -19,4 +20,6 @@ __all__ = [
     "KnowledgeDocument",
     "ProcessingStatus",
     "RequestIntent",
+    "SystemSettings",
+    "SystemMode",
 ]

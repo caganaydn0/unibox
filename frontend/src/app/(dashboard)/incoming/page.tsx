@@ -37,7 +37,7 @@ export default function IncomingPage() {
   const [filter, setFilter] = useState("PENDING_REVIEW");
   const { emails, loading, error, refresh } = useIncomingEmails(filter || undefined);
   const [actionId, setActionId] = useState<string | null>(null);
-  const { subscribe } = useWsContext();
+  const { subscribe, systemMode } = useWsContext();
 
   useEffect(() => {
     return subscribe((event) => {
@@ -119,6 +119,13 @@ export default function IncomingPage() {
         </button>
       </div>
 
+      {systemMode === "PILOT" && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <span className="font-semibold">Pilot Modu aktif</span> — gelen e-postalara AI
+          yanıtları otomatik olarak, incelemeye gerek kalmadan gönderiliyor.
+        </div>
+      )}
+
       {/* Filtreler */}
       <div className="flex gap-2 mb-4 flex-wrap">
         {[
@@ -175,6 +182,11 @@ export default function IncomingPage() {
                       >
                         {statusCfg.label}
                       </span>
+                      {email.auto_approved && (
+                        <span className="inline-flex items-center rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700">
+                          Otomatik (Pilot)
+                        </span>
+                      )}
                       {email.intent_type && (
                         <>
                           <span className="text-xs text-gray-400">
