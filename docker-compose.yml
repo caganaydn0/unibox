@@ -1,15 +1,15 @@
-version: "3.9"
-
 services:
   # PostgreSQL + pgvector — Veritabanı + vektör araması
   postgres:
     image: pgvector/pgvector:pg16
     container_name: unibox_postgres
     ports:
-      - "5432:5432"
+      # KVKK: Yalnızca localhost'a bağla. "5432:5432" yazılırsa Docker portu
+      # 0.0.0.0'a açar ve veritabanı tüm yerel ağdan erişilebilir hale gelir.
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD tanimli degil - .env dosyasina ekleyin}
       POSTGRES_DB: unibox
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -22,7 +22,10 @@ services:
     image: ollama/ollama:latest
     container_name: unibox_ollama
     ports:
-      - "11434:11434"
+      # Host'ta da bir Ollama servisi kurulu ve 127.0.0.1:11434'ü tutuyor.
+      # Container'ı 11435'e alıyoruz ki ikisi çakışmadan bir arada yaşasın.
+      # Uygulama bu container'ı kullanır: backend/.env -> OLLAMA_BASE_URL
+      - "127.0.0.1:11435:11434"
     volumes:
       - ollama_data:/root/.ollama
     restart: unless-stopped
@@ -34,5 +37,11 @@ services:
     #         - capabilities: [gpu]
 
 volumes:
+  # Açık isim veriyoruz: aksi halde Compose volume adının başına proje adını
+  # (klasör adı) ekler. Bu proje "unibox_1.1" klasöründe olduğu için
+  # varsayılan davranış "unibox_11_postgres_data" adında BOŞ bir volume
+  # oluşturur ve mevcut veritabanı kaybolmuş gibi görünür.
   postgres_data:
+    name: unibox_postgres_data
   ollama_data:
+    name: unibox_ollama_data
