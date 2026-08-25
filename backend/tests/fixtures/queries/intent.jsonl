@@ -1,0 +1,160 @@
+{"input": "İyi günler, Otopark nerede bulunuyor? Acil olarak ihtiyacım var.", "expected_intent": "other", "expected_requires_email": false}
+{"input": "Sayın yetkili, mahkeme için kayıt belgesi almak istiyorum. İyi çalışmalar dilerim.", "expected_intent": "enrollment_letter", "expected_requires_email": true}
+{"input": "İyi çalışmalar, Staj için 2024-2025 yaz transkript belgesi lazım. Yardımcı olursanız çok sevinirim.", "expected_intent": "transcript_request", "expected_requires_email": true}
+{"input": "Merhabalar, vize başvurusu amacıyla aktif kayıt belgesi istiyorum. Şimdiden teşekkür ederim.", "expected_intent": "enrollment_letter", "expected_requires_email": true}
+{"input": "Bu akşam kampüste etkinlik var mı? Acil olarak ihtiyacım var.", "expected_intent": "other", "expected_requires_email": false}
+{"input": "Merhabalar, Öğrenci belgemi aynı gün alabilir miyim? Şimdiden teşekkür ederim.", "expected_intent": "certificate_request", "expected_requires_email": true}
+{"input": "Sayın yetkili, Yaz okulu 2021-2022 yılında açılacak mı? Teşekkürler.", "expected_intent": "general_question", "expected_requires_email": false}
+{"input": "Selam, Yaz okulu 2025-2026 yılında açılacak mı?", "expected_intent": "general_question", "expected_requires_email": false}
+{"input": "Sayın yetkili, Dijital imzalı öğrenci belgesi talep ediyorum, burs başvurusu için. İyi çalışmalar dilerim.", "expected_intent": "certificate_request", "expected_requires_email": true}
+{"input": "Selam, yemekhane hijyeni konusunda resmi şikayetim var.", "expected_intent": "complaint", "expected_requires_email": true}
+{"input": "İyi günler, Kütüphane kaça kadar açık? İyi çalışmalar dilerim.", "expected_intent": "other", "expected_requires_email": false}
+{"input": "engelli erişimi nedeniyle mağdur oldum, incelenmesini rica ederim.", "expected_intent": "complaint", "expected_requires_email": true}
+{"input": "KIM201 ara sınav sonucumun yeniden değerlendirilmesini istiyorum.", "expected_intent": "grade_objection", "expected_requires_email": true}
+{"input": "Selam, 2021-2022 öğretim yılı kayıt belgemi almak istiyorum. Teşekkürler.", "expected_intent": "enrollment_letter", "expected_requires_email": true}
+{"input": "Merhaba, yurt dışı eğitim gerekçesiyle 1 dönem izin almak istiyorum. Teşekkürler.", "expected_intent": "leave_of_absence", "expected_requires_email": true}
+{"input": "BIL203 quiz notumu sistemde göremiyorum, kontrol edilsin.", "expected_intent": "grade_objection", "expected_requires_email": true}
+{"input": "ders materyali konusunda resmi şikayetim var. Gereğini rica ederim.", "expected_intent": "complaint", "expected_requires_email": true}
+{"input": "yemekhane hijyeni nedeniyle mağdur oldum, incelenmesini rica ederim.", "expected_intent": "complaint", "expected_requires_email": true}
+{"input": "Merhaba, banka işlemleri için kayıt belgesi almak istiyorum. Teşekkürler.", "expected_intent": "enrollment_letter", "expected_requires_email": true}
+{"input": "derslik koşulları konusunda resmi şikayetim var. Yardımcı olursanız çok sevinirim.", "expected_intent": "complaint", "expected_requires_email": true}
+{"input": "PSİ103 quiz sınavı notuma itiraz etmek istiyorum.", "expected_intent": "grade_objection", "expected_requires_email": true}
+{"input": "yurt dışı eğitim nedeniyle 2 yıl kayıt dondurmak istiyorum.", "expected_intent": "leave_of_absence", "expected_requires_email": true}
+{"input": "Merhaba, Yemekhane menüsü nerede yayınlanıyor? Gereğini rica ederim.", "expected_intent": "other", "expected_requires_email": false}
+{"input": "İyi çalışmalar, laboratuvar ekipmanı nedeniyle mağdur oldum, incelenmesini rica ederim. Yardımcı olursanız çok sevinirim.", "expected_intent": "complaint", "expected_requires_email": true}
+{"input": "İyi çalışmalar, Dijital imzalı öğrenci belgesi talep ediyorum, burs başvurusu için. Acil olarak ihtiyacım var.", "expected_intent": "certificate_request", "expected_requires_email": true}
+{"input": "Sayın yetkili, derslik koşulları hakkında şikayette bulunmak istiyorum.", "expected_intent": "complaint", "expected_requires_email": true}
+{"input": "2024-2025 yılı için İngilizce transkript belgesi talep ediyorum.", "expected_intent": "transcript_request", "expected_requires_email": true}
+{"input": "İyi çalışmalar, 2022-2023 güz dönemi transkriptimi almak istiyorum. Teşekkürler.", "expected_intent": "transcript_request", "expected_requires_email": true}
+{"input": "Sayın yetkili, toplu taşıma indirimi için öğrenci belgesi almak istiyorum. İyi çalışmalar dilerim.", "expected_intent": "certificate_request", "expected_requires_email": true}
+{"input": "İyi çalışmalar, Akademik takvim ne zaman ilan edilir? Yardımcı olursanız çok sevinirim.", "expected_intent": "general_question", "expected_requires_email": false}
+{"input": "Merhabalar, Staj zorunlu mu, kaç gün olması gerekiyor? Şimdiden teşekkür ederim.", "expected_intent": "general_question", "expected_requires_email": false}
+{"input": "Merhabalar, yurt dışı eğitim gerekçesiyle 1 yıl izin almak istiyorum. Şimdiden teşekkür ederim.", "expected_intent": "leave_of_absence", "expected_requires_email": true}
+{"input": "2025-2026 yılı için Türkçe transkript belgesi talep ediyorum.", "expected_intent": "transcript_request", "expected_requires_email": true}
+{"input": "İyi günler, yaz dönemi kayıt yenileme tarihleri ne zaman? Teşekkürler.", "expected_intent": "general_question", "expected_requires_email": false}
+{"input": "İyi çalışmalar, KYK yurt başvurusu için kayıt belgesi almak istiyorum.", "expected_intent": "enrollment_letter", "expected_requires_email": true}
+{"input": "derslik koşulları hakkında şikayette bulunmak istiyorum.", "expected_intent": "complaint", "expected_requires_email": true}
+{"input": "Sayın yetkili, laboratuvar ekipmanı nedeniyle mağdur oldum, incelenmesini rica ederim. İyi çalışmalar dilerim.", "expected_intent": "complaint", "expected_requires_email": true}
+{"input": "İyi çalışmalar, staj başvurusu amacıyla aktif kayıt belgesi istiyorum.", "expected_intent": "enrollment_letter", "expected_requires_email": true}
+{"input": "Merhabalar, engelli erişimi ile ilgili bir sorunu bildirmek istiyorum. Yardımcı olursanız çok sevinirim.", "expected_intent": "complaint", "expected_requires_email": true}
+{"input": "Merhabalar, derslik koşulları hakkında şikayette bulunmak istiyorum. Şimdiden teşekkür ederim.", "expected_intent": "complaint", "expected_requires_email": true}
+{"input": "Selam, Merhaba nasılsınız? Şimdiden teşekkür ederim.", "expected_intent": "other", "expected_requires_email": false}
+{"input": "MİM201 bütünleme sınavı notuma itiraz etmek istiyorum.", "expected_intent": "grade_objection", "expected_requires_email": true}
+{"input": "2024-2025 güz dönemi transkriptimi almak istiyorum.", "expected_intent": "transcript_request", "expected_requires_email": true}
+{"input": "İyi günler, Akademik takvim ne zaman ilan edilir? Gereğini rica ederim.", "expected_intent": "general_question", "expected_requires_email": false}
+{"input": "Sayın yetkili, Bölüm değişikliği için ne yapmam gerekiyor? Gereğini rica ederim.", "expected_intent": "general_question", "expected_requires_email": false}
+{"input": "Selam, Danışman hocamı nasıl değiştirebilirim?", "expected_intent": "general_question", "expected_requires_email": false}
+{"input": "Sayın yetkili, Staj için 2024-2025 yaz transkript belgesi lazım. Gereğini rica ederim.", "expected_intent": "transcript_request", "expected_requires_email": true}
+{"input": "Merhabalar, Yurt dışı başvurusu için onaylı Türkçe transkript istiyorum. Şimdiden teşekkür ederim.", "expected_intent": "transcript_request", "expected_requires_email": true}
+{"input": "Harf notuma itiraz başvurusu yapmak istiyorum, ders KIM201.", "expected_intent": "grade_objection", "expected_requires_email": true}
+{"input": "Selam, vize başvurusu için kayıt belgesi almak istiyorum. Gereğini rica ederim.", "expected_intent": "enrollment_letter", "expected_requires_email": true}
+{"input": "İyi çalışmalar, 2023-2024 öğretim yılı kayıt belgemi almak istiyorum. Acil olarak ihtiyacım var.", "expected_intent": "enrollment_letter", "expected_requires_email": true}
+{"input": "Merhabalar, Mezuniyet için kaç kredi gerekiyor? Şimdiden teşekkür ederim.", "expected_intent": "general_question", "expected_requires_email": false}
+{"input": "İyi günler, Staj için 2022-2023 bahar transkript belgesi lazım. Teşekkürler.", "expected_intent": "transcript_request", "expected_requires_email": true}
+{"input": "öğrenci işleri hizmeti hakkında şikayette bulunmak istiyorum.", "expected_intent": "complaint", "expected_requires_email": true}
+{"input": "Merhabalar, ekonomik zorluk gerekçesiyle 1 yıl izin almak istiyorum. Acil olarak ihtiyacım var.", "expected_intent": "leave_of_absence", "expected_requires_email": true}
+{"input": "İyi çalışmalar, toplu taşıma indirimi için kayıt belgesi almak istiyorum.", "expected_intent": "enrollment_letter", "expected_requires_email": true}
+{"input": "İyi günler, sağlık sorunları nedeniyle 2 yıl kayıt dondurmak istiyorum. Acil olarak ihtiyacım var.", "expected_intent": "leave_of_absence", "expected_requires_email": true}
+{"input": "güz dönemi transkriptime ihtiyacım var.", "expected_intent": "transcript_request", "expected_requires_email": true}
+{"input": "Merhaba, toplu taşıma indirimi için öğrenci sertifikası çıkartabilir miyim? Acil olarak ihtiyacım var.", "expected_intent": "certificate_request", "expected_requires_email": true}
+{"input": "TIP110 vize notumu sistemde göremiyorum, kontrol edilsin.", "expected_intent": "grade_objection", "expected_requires_email": true}
+{"input": "mahkeme amacıyla aktif öğrenci belgesi talep ediyorum.", "expected_intent": "certificate_request", "expected_requires_email": true}
+{"input": "Sayın yetkili, banka işlemleri için öğrenci sertifikası çıkartabilir miyim? Gereğini rica ederim.", "expected_intent": "certificate_request", "expected_requires_email": true}
+{"input": "Merhabalar, iş yoğunluğu nedeniyle 1 yıl kayıt dondurmak istiyorum. Teşekkürler.", "expected_intent": "leave_of_absence", "expected_requires_email": true}
+{"input": "FIZ102 bütünleme sınavı notuma itiraz etmek istiyorum.", "expected_intent": "grade_objection", "expected_requires_email": true}
+{"input": "İyi çalışmalar, Teşekkür ederim, iyi çalışmalar. Teşekkürler.", "expected_intent": "other", "expected_requires_email": false}
+{"input": "Sayın yetkili, Yaz okulu 2022-2023 yılında açılacak mı? Acil olarak ihtiyacım var.", "expected_intent": "general_question", "expected_requires_email": false}
+{"input": "2025-2026 yaz dönemi transkriptimi almak istiyorum.", "expected_intent": "transcript_request", "expected_requires_email": true}
+{"input": "Merhabalar, yurt dışı eğitim nedeniyle 1 yıl kayıt dondurmak istiyorum. Yardımcı olursanız çok sevinirim.", "expected_intent": "leave_of_absence", "expected_requires_email": true}
+{"input": "İyi çalışmalar, ders materyali konusunda resmi şikayetim var. Şimdiden teşekkür ederim.", "expected_intent": "complaint", "expected_requires_email": true}
+{"input": "Sayın yetkili, Otopark nerede bulunuyor? Teşekkürler.", "expected_intent": "other", "expected_requires_email": false}
+{"input": "Dijital imzalı öğrenci belgesi talep ediyorum, vize başvurusu için.", "expected_intent": "certificate_request", "expected_requires_email": true}
+{"input": "İyi çalışmalar, Bu akşam kampüste etkinlik var mı? Yardımcı olursanız çok sevinirim.", "expected_intent": "other", "expected_requires_email": false}
+{"input": "Selam, doğal afet mağduriyeti nedeniyle 1 yıl kayıt dondurmak istiyorum. İyi çalışmalar dilerim.", "expected_intent": "leave_of_absence", "expected_requires_email": true}
+{"input": "KIM201 dersinin final notu hatalı girilmiş. İyi çalışmalar dilerim.", "expected_intent": "grade_objection", "expected_requires_email": true}
+{"input": "İKT101 vize sınavı notuma itiraz etmek istiyorum.", "expected_intent": "grade_objection", "expected_requires_email": true}
+{"input": "İyi çalışmalar, bahar dönemi kayıt yenileme tarihleri ne zaman? Şimdiden teşekkür ederim.", "expected_intent": "general_question", "expected_requires_email": false}
+{"input": "Merhabalar, Teşekkür ederim, iyi çalışmalar.", "expected_intent": "other", "expected_requires_email": false}
+{"input": "Merhaba, Yemekhane menüsü nerede yayınlanıyor? Acil olarak ihtiyacım var.", "expected_intent": "other", "expected_requires_email": false}
+{"input": "Selam, PSİ103 bütünleme notumu sistemde göremiyorum, kontrol edilsin. İyi çalışmalar dilerim.", "expected_intent": "grade_objection", "expected_requires_email": true}
+{"input": "PSİ103 ara sınav sonucumun yeniden değerlendirilmesini istiyorum.", "expected_intent": "grade_objection", "expected_requires_email": true}
+{"input": "İyi çalışmalar, Otopark nerede bulunuyor? Acil olarak ihtiyacım var.", "expected_intent": "other", "expected_requires_email": false}
+{"input": "Sayın yetkili, öğretim üyesi davranışı nedeniyle mağdur oldum, incelenmesini rica ederim. Gereğini rica ederim.", "expected_intent": "complaint", "expected_requires_email": true}
+{"input": "hamilelik sebebiyle bu dönem izin başvurusu yapmak istiyorum. Acil olarak ihtiyacım var.", "expected_intent": "leave_of_absence", "expected_requires_email": true}
+{"input": "Merhabalar, Merhaba nasılsınız? Teşekkürler.", "expected_intent": "other", "expected_requires_email": false}
+{"input": "Merhabalar, Merhaba nasılsınız? Acil olarak ihtiyacım var.", "expected_intent": "other", "expected_requires_email": false}
+{"input": "Sayın yetkili, Sınav sonuçları ne zaman açıklanır? Şimdiden teşekkür ederim.", "expected_intent": "general_question", "expected_requires_email": false}
+{"input": "İKT101 final sonucumun yeniden değerlendirilmesini istiyorum.", "expected_intent": "grade_objection", "expected_requires_email": true}
+{"input": "Merhabalar, aile sağlık sorunu nedeniyle 2 dönem kayıt dondurmak istiyorum. Teşekkürler.", "expected_intent": "leave_of_absence", "expected_requires_email": true}
+{"input": "hamilelik gerekçesiyle 1 yıl izin almak istiyorum.", "expected_intent": "leave_of_absence", "expected_requires_email": true}
+{"input": "Merhaba, iş başvurusu için öğrenci sertifikası çıkartabilir miyim? Yardımcı olursanız çok sevinirim.", "expected_intent": "certificate_request", "expected_requires_email": true}
+{"input": "İyi günler, 2024-2025 öğretim yılı kayıt belgemi almak istiyorum. Gereğini rica ederim.", "expected_intent": "enrollment_letter", "expected_requires_email": true}
+{"input": "2021-2022 yılı için İngilizce transkript belgesi talep ediyorum. Acil olarak ihtiyacım var.", "expected_intent": "transcript_request", "expected_requires_email": true}
+{"input": "İyi günler, toplu taşıma indirimi için öğrenci belgesi almak istiyorum. Gereğini rica ederim.", "expected_intent": "certificate_request", "expected_requires_email": true}
+{"input": "İyi günler, hamilelik nedeniyle 1 dönem kayıt dondurmak istiyorum. Acil olarak ihtiyacım var.", "expected_intent": "leave_of_absence", "expected_requires_email": true}
+{"input": "MAK301 quiz notumu sistemde göremiyorum, kontrol edilsin.", "expected_intent": "grade_objection", "expected_requires_email": true}
+{"input": "MİM201 dersinin final notu hatalı girilmiş.", "expected_intent": "grade_objection", "expected_requires_email": true}
+{"input": "Sayın yetkili, Yemekhane menüsü nerede yayınlanıyor? İyi çalışmalar dilerim.", "expected_intent": "other", "expected_requires_email": false}
+{"input": "Merhaba, sağlık sigortası için öğrenci sertifikası çıkartabilir miyim? Teşekkürler.", "expected_intent": "certificate_request", "expected_requires_email": true}
+{"input": "FIZ102 bütünleme notumu sistemde göremiyorum, kontrol edilsin.", "expected_intent": "grade_objection", "expected_requires_email": true}
+{"input": "Merhaba, sağlık sigortası amacıyla aktif kayıt belgesi istiyorum. Acil olarak ihtiyacım var.", "expected_intent": "enrollment_letter", "expected_requires_email": true}
+{"input": "Sayın yetkili, Mezuniyet için transkript belgeme ihtiyacım var. Şimdiden teşekkür ederim.", "expected_intent": "transcript_request", "expected_requires_email": true}
+{"input": "Selam, 2023-2024 bahar dönemi transkriptimi almak istiyorum. Şimdiden teşekkür ederim.", "expected_intent": "transcript_request", "expected_requires_email": true}
+{"input": "Merhabalar, 2025-2026 öğretim yılı kayıt belgemi almak istiyorum. Teşekkürler.", "expected_intent": "enrollment_letter", "expected_requires_email": true}
+{"input": "Merhaba, 2023-2024 öğretim yılı kayıt belgemi almak istiyorum.", "expected_intent": "enrollment_letter", "expected_requires_email": true}
+{"input": "Sayın yetkili, Yemekhane menüsü nerede yayınlanıyor? Teşekkürler.", "expected_intent": "other", "expected_requires_email": false}
+{"input": "İyi günler, doğal afet mağduriyeti nedeniyle 2 yıl kayıt dondurmak istiyorum. Teşekkürler.", "expected_intent": "leave_of_absence", "expected_requires_email": true}
+{"input": "Dijital imzalı öğrenci belgesi talep ediyorum, toplu taşıma indirimi için. Acil olarak ihtiyacım var.", "expected_intent": "certificate_request", "expected_requires_email": true}
+{"input": "öğretim üyesi davranışı ile ilgili bir sorunu bildirmek istiyorum.", "expected_intent": "complaint", "expected_requires_email": true}
+{"input": "İyi çalışmalar, burs başvurusu için kayıt belgesi almak istiyorum. Gereğini rica ederim.", "expected_intent": "enrollment_letter", "expected_requires_email": true}
+{"input": "Sayın yetkili, sağlık sorunları gerekçesiyle 1 yıl izin almak istiyorum. İyi çalışmalar dilerim.", "expected_intent": "leave_of_absence", "expected_requires_email": true}
+{"input": "İyi çalışmalar, sağlık sorunları nedeniyle 2 dönem kayıt dondurmak istiyorum. Yardımcı olursanız çok sevinirim.", "expected_intent": "leave_of_absence", "expected_requires_email": true}
+{"input": "İyi çalışmalar, hamilelik gerekçesiyle 2 dönem izin almak istiyorum.", "expected_intent": "leave_of_absence", "expected_requires_email": true}
+{"input": "Sayın yetkili, ders materyali hakkında şikayette bulunmak istiyorum. İyi çalışmalar dilerim.", "expected_intent": "complaint", "expected_requires_email": true}
+{"input": "Selam, Öğrenci e-posta hesabımı nasıl aktive ederim?", "expected_intent": "general_question", "expected_requires_email": false}
+{"input": "İyi günler, Staj için 2025-2026 güz transkript belgesi lazım.", "expected_intent": "transcript_request", "expected_requires_email": true}
+{"input": "Sayın yetkili, Erasmus başvurusu nasıl yapılır? Şimdiden teşekkür ederim.", "expected_intent": "general_question", "expected_requires_email": false}
+{"input": "2021-2022 bahar dönemi transkriptimi almak istiyorum.", "expected_intent": "transcript_request", "expected_requires_email": true}
+{"input": "KIM201 dersinin quiz notu hatalı girilmiş.", "expected_intent": "grade_objection", "expected_requires_email": true}
+{"input": "Merhaba, 2022-2023 yılı için İngilizce transkript belgesi talep ediyorum. İyi çalışmalar dilerim.", "expected_intent": "transcript_request", "expected_requires_email": true}
+{"input": "Merhaba, Staj zorunlu mu, kaç gün olması gerekiyor? Gereğini rica ederim.", "expected_intent": "general_question", "expected_requires_email": false}
+{"input": "Merhaba, burs ödeme gecikmesi konusunda resmi şikayetim var. Yardımcı olursanız çok sevinirim.", "expected_intent": "complaint", "expected_requires_email": true}
+{"input": "Öğrenci e-posta hesabımı nasıl aktive ederim?", "expected_intent": "general_question", "expected_requires_email": false}
+{"input": "EEE202 dersinin quiz notu hatalı girilmiş.", "expected_intent": "grade_objection", "expected_requires_email": true}
+{"input": "Merhabalar, derslik koşulları hakkında şikayette bulunmak istiyorum.", "expected_intent": "complaint", "expected_requires_email": true}
+{"input": "Merhaba, Staj için 2025-2026 güz transkript belgesi lazım. Teşekkürler.", "expected_intent": "transcript_request", "expected_requires_email": true}
+{"input": "Selam, yaz dönemi kayıt yenileme tarihleri ne zaman? Gereğini rica ederim.", "expected_intent": "general_question", "expected_requires_email": false}
+{"input": "İyi çalışmalar, askerlik tecili amacıyla aktif öğrenci belgesi talep ediyorum. Şimdiden teşekkür ederim.", "expected_intent": "certificate_request", "expected_requires_email": true}
+{"input": "KIM201 final notumu sistemde göremiyorum, kontrol edilsin.", "expected_intent": "grade_objection", "expected_requires_email": true}
+{"input": "Merhaba, iş başvurusu için öğrenci belgesi almak istiyorum. Teşekkürler.", "expected_intent": "certificate_request", "expected_requires_email": true}
+{"input": "İyi çalışmalar, burs başvurusu amacıyla aktif öğrenci belgesi talep ediyorum. Teşekkürler.", "expected_intent": "certificate_request", "expected_requires_email": true}
+{"input": "Merhabalar, Tüm dönemleri kapsayan İngilizce transkript talep ediyorum. Yardımcı olursanız çok sevinirim.", "expected_intent": "transcript_request", "expected_requires_email": true}
+{"input": "Sayın yetkili, askerlik tecili amacıyla aktif öğrenci belgesi talep ediyorum. İyi çalışmalar dilerim.", "expected_intent": "certificate_request", "expected_requires_email": true}
+{"input": "Dijital imzalı öğrenci belgesi talep ediyorum, staj başvurusu için. Yardımcı olursanız çok sevinirim.", "expected_intent": "certificate_request", "expected_requires_email": true}
+{"input": "Dijital imzalı öğrenci belgesi talep ediyorum, staj başvurusu için. Teşekkürler.", "expected_intent": "certificate_request", "expected_requires_email": true}
+{"input": "Sayın yetkili, KYK yurt başvurusu için kayıt belgesi almak istiyorum.", "expected_intent": "enrollment_letter", "expected_requires_email": true}
+{"input": "Sayın yetkili, Kayıt belgemi Türkçe olarak talep ediyorum.", "expected_intent": "enrollment_letter", "expected_requires_email": true}
+{"input": "Merhabalar, Dijital imzalı öğrenci belgesi talep ediyorum, burs başvurusu için. Yardımcı olursanız çok sevinirim.", "expected_intent": "certificate_request", "expected_requires_email": true}
+{"input": "HUK102 sınav kağıdımın tekrar incelenmesini talep ediyorum.", "expected_intent": "grade_objection", "expected_requires_email": true}
+{"input": "İyi günler, KYK yurt başvurusu için öğrenci belgesi almak istiyorum. Teşekkürler.", "expected_intent": "certificate_request", "expected_requires_email": true}
+{"input": "Sayın yetkili, vize başvurusu için kayıt belgesi almak istiyorum.", "expected_intent": "enrollment_letter", "expected_requires_email": true}
+{"input": "Selam, bahar dönemi kayıt yenileme tarihleri ne zaman? Şimdiden teşekkür ederim.", "expected_intent": "general_question", "expected_requires_email": false}
+{"input": "ders materyali nedeniyle mağdur oldum, incelenmesini rica ederim. Gereğini rica ederim.", "expected_intent": "complaint", "expected_requires_email": true}
+{"input": "hamilelik gerekçesiyle 2 yıl izin almak istiyorum.", "expected_intent": "leave_of_absence", "expected_requires_email": true}
+{"input": "Sayın yetkili, Otopark nerede bulunuyor? Acil olarak ihtiyacım var.", "expected_intent": "other", "expected_requires_email": false}
+{"input": "iş yoğunluğu nedeniyle 2 yıl kayıt dondurmak istiyorum. Teşekkürler.", "expected_intent": "leave_of_absence", "expected_requires_email": true}
+{"input": "İKT101 dersinin quiz notu hatalı girilmiş.", "expected_intent": "grade_objection", "expected_requires_email": true}
+{"input": "ekonomik zorluk gerekçesiyle 2 dönem izin almak istiyorum.", "expected_intent": "leave_of_absence", "expected_requires_email": true}
+{"input": "Merhaba, Erasmus başvurusu nasıl yapılır? Acil olarak ihtiyacım var.", "expected_intent": "general_question", "expected_requires_email": false}
+{"input": "Selam, staj başvurusu için kayıt belgesi almak istiyorum.", "expected_intent": "enrollment_letter", "expected_requires_email": true}
+{"input": "Merhabalar, Yemekhane menüsü nerede yayınlanıyor? Teşekkürler.", "expected_intent": "other", "expected_requires_email": false}
+{"input": "Merhaba, Kayıt yenileme belgesi alabilir miyim?", "expected_intent": "enrollment_letter", "expected_requires_email": true}
+{"input": "Merhaba, iş yoğunluğu gerekçesiyle 1 dönem izin almak istiyorum. İyi çalışmalar dilerim.", "expected_intent": "leave_of_absence", "expected_requires_email": true}
+{"input": "İyi çalışmalar, Kütüphane kaça kadar açık?", "expected_intent": "other", "expected_requires_email": false}
+{"input": "Mezuniyet için kaç kredi gerekiyor? Acil olarak ihtiyacım var.", "expected_intent": "general_question", "expected_requires_email": false}
+{"input": "Kayıt yenileme belgesi alabilir miyim?", "expected_intent": "enrollment_letter", "expected_requires_email": true}
+{"input": "Selam, Not döküm belgemi Türkçe olarak alabilir miyim? Teşekkürler.", "expected_intent": "transcript_request", "expected_requires_email": true}
+{"input": "Bu akşam kampüste etkinlik var mı? İyi çalışmalar dilerim.", "expected_intent": "other", "expected_requires_email": false}
+{"input": "bahar dönemi transkriptime ihtiyacım var. Yardımcı olursanız çok sevinirim.", "expected_intent": "transcript_request", "expected_requires_email": true}
+{"input": "Sayın yetkili, öğretim üyesi davranışı ile ilgili bir sorunu bildirmek istiyorum. Yardımcı olursanız çok sevinirim.", "expected_intent": "complaint", "expected_requires_email": true}
+{"input": "Merhaba, Teşekkür ederim, iyi çalışmalar. İyi çalışmalar dilerim.", "expected_intent": "other", "expected_requires_email": false}

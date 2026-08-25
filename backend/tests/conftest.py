@@ -16,9 +16,46 @@ import logging
 import os
 import socket
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 import pytest
+
+# --------------------------------------------------------------------------- #
+# ÖLÇÜM VERİTABANINA YÖNLENDİRME — app içe aktarılmadan ÖNCE olmalı
+# --------------------------------------------------------------------------- #
+# Testler asla geliştirme verisine dokunmamalı. İki sebeple:
+#   1. Ölçüm, o anki geliştirme korpusuna göre değişirse tekrarlanamaz.
+#   2. Testler tablo siliyor; yanlış veritabanında çalışması veri kaybıdır.
+#
+# pydantic-settings ortam değişkenini .env dosyasının ÜSTÜNDE tutar, bu yüzden
+# burada DATABASE_URL'i ezmek app.config içe aktarılırken geçerli olur.
+# db/session.py motoru modül seviyesinde kurduğu için sıra kritik: bu blok
+# conftest'in en üstünde, herhangi bir `app.*` importundan önce çalışır.
+def _eval_db_url_kur() -> None:
+    # db/session.py: echo=(APP_ENV == "development") — SQLAlchemy o zaman HER
+    # sorguyu bağlı parametreleriyle loglar; 1024 boyutlu embedding vektörleri
+    # dahil. Test çıktısını okunamaz hâle getiriyor, ayrıca PII sızdırma yolu.
+    # Motor modül seviyesinde kurulduğu için bunu import'tan önce ayarlamalıyız.
+    os.environ.setdefault("APP_ENV", "test")
+
+    if os.environ.get("UNIBOX_TEST_USE_DEV_DB"):
+        return  # bilinçli devre dışı bırakma
+    # .env'i settings'e dokunmadan okumak için minimal ayrıştırma
+    ana = os.environ.get("DATABASE_URL")
+    if not ana:
+        env = Path(__file__).resolve().parent.parent / ".env"
+        if env.exists():
+            for satır in env.read_text(encoding="utf-8").splitlines():
+                if satır.startswith("DATABASE_URL="):
+                    ana = satır.split("=", 1)[1].strip()
+                    break
+    if not ana:
+        ana = "postgresql+asyncpg://postgres:postgres@localhost:5432/unibox"
+    p = urlparse(ana)
+    os.environ["DATABASE_URL"] = urlunparse(p._replace(path="/unibox_eval"))
+
+
+_eval_db_url_kur()
 
 # SQLAlchemy echo, APP_ENV=development iken her sorguyu bağlı parametreleriyle
 # loglar — 1024 boyutlu embedding vektörleri dahil. Test çıktısını okunamaz
@@ -83,3 +120,22 @@ def pytest_collection_modifyitems(config, items):
     )
     for item in canlı_gerekiyor:
         item.add_marker(atla)
+
+
+@pytest.fixture(scope="session")
+async def korpus():
+    """Sabit ölçüm korpusu — oturum başına bir kez kurulur.
+
+    Fixture içeriği ve chunk/embedding ayarları değişmediyse yeniden
+    indekslemez (bge-m3 ile ~250 chunk gömmek 1-3 dakika sürer).
+    Zorla yeniden kurmak için: UNIBOX_EVAL_REBUILD=1
+    """
+    from tests.rag.corpus import corpus
+
+    bilgi = await corpus()
+    print(
+        f"\n[korpus] {bilgi.doküman_sayısı} doküman / {bilgi.chunk_sayısı} chunk "
+        f"· damga {bilgi.damga} · "
+        f"{'YENİDEN KURULDU' if bilgi.yeniden_kuruldu else 'önbellekten'}"
+    )
+    return bilgi

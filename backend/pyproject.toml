@@ -61,6 +61,12 @@ target-version = "py311"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# Döngü kapsamı OTURUM olmalı. db/session.py motoru modül seviyesinde kurar ve
+# asyncpg bağlantıları oluşturuldukları event loop'a bağlıdır. Varsayılan
+# fonksiyon kapsamıyla, oturum kapsamlı korpus fixture'ı bir döngüde bağlantı
+# açar, testler başka döngüde kullanır ve "Event loop is closed" alınır.
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
 # backend/ kökünü sys.path'e ekler; scriptlerdeki elle sys.path.insert
 # hilesinin yerini alır (8 script bunu kopyalıyordu).
 pythonpath = ["."]
