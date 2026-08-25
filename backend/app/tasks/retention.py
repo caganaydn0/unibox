@@ -21,16 +21,30 @@ logger = logging.getLogger(__name__)
 # 24 saat
 RETENTION_CHECK_INTERVAL = 24 * 60 * 60
 
+# Açılıştaki ilk temizlikten önceki kısa bekleme. Uygulama açılışını
+# yavaşlatmamak için var; asıl amaç ilk turu bir gün ertelememek.
+RETENTION_STARTUP_DELAY = 60
+
 
 async def retention_worker() -> None:
-    """Günlük KVKK temizlik görevi."""
+    """Günlük KVKK temizlik görevi.
+
+    DİKKAT — düzeltilen davranış: sleep eskiden döngünün BAŞINDAYDI, yani
+    temizlik ilk 24 saat boyunca hiç çalışmıyordu. Uygulama günde bir kez
+    yeniden başlatılıyorsa (deploy, çökme, sunucu bakımı) KVKK saklama
+    süresi temizliği HİÇBİR ZAMAN çalışmıyordu — sessiz bir uyumluluk açığı.
+
+    Artık açılıştan kısa süre sonra bir kez, sonra günlük çalışıyor.
+    """
     logger.info("Retention worker başlatıldı.")
+    await asyncio.sleep(RETENTION_STARTUP_DELAY)
     while True:
-        await asyncio.sleep(RETENTION_CHECK_INTERVAL)
         try:
-            await run_retention()
+            istatistik = await run_retention()
+            logger.info("Retention tamamlandı: %s", istatistik)
         except Exception as exc:
             logger.error("Retention hatası: %s", exc, exc_info=True)
+        await asyncio.sleep(RETENTION_CHECK_INTERVAL)
 
 
 async def run_retention() -> dict:

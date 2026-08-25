@@ -16,6 +16,7 @@ from app.services.anonymizer import (
     dedupe_lines,
     drop_orphan_intros,
     has_pii,
+    mask_email_address,
     mask_pii,
     sanitize_draft_body,
     strip_pii_requests,
@@ -72,6 +73,28 @@ def test_tckn_uzunluk_sınırı() -> None:
 def test_has_pii_tutarlı() -> None:
     assert has_pii("TCKN 12345678901")
     assert not has_pii("yaz okulu kayıt tarihleri")
+
+
+# --------------------------------------------------------------------------- #
+# mask_email_address — log için kısmi maskeleme
+# --------------------------------------------------------------------------- #
+
+def test_email_yerel_kismi_gizlenir_alan_korunur() -> None:
+    """Alan adı hata ayıklama için kalır, kişiyi tanımlayan kısım gizlenir."""
+    sonuç = mask_email_address("ahmet.yilmaz@gazi.edu.tr")
+    assert sonuç == "ah***@gazi.edu.tr"
+    assert "yilmaz" not in sonuç
+
+
+@pytest.mark.parametrize("bozuk", ["", None, "adres-degil", "@alan.com"])
+def test_email_maskeleme_bozuk_girdide_patlamaz(bozuk) -> None:
+    sonuç = mask_email_address(bozuk)
+    assert isinstance(sonuç, str) and "***" in sonuç
+
+
+def test_artiisaretli_adres_tam_gizlenmez_ama_yerel_kisilir() -> None:
+    """a@b.com gibi kısa adreslerde bile yerel kısım tamamen açılmamalı."""
+    assert mask_email_address("a@gazi.edu.tr") == "a***@gazi.edu.tr"
 
 
 # --------------------------------------------------------------------------- #

@@ -1,9 +1,27 @@
+from pathlib import Path
+
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# .env dosyasını MUTLAK yolla çözüyoruz. Göreli ".env" yalnızca süreç
+# backend/ dizininden başlatıldığında bulunuyordu; başka bir çalışma
+# dizininden (systemd, konteyner, kök dizinden uvicorn) başlatıldığında
+# dosya SESSİZCE yok sayılıyor ve uygulama aşağıdaki CHANGE_ME
+# varsayılanlarıyla açılıyordu.
+_ENV_DOSYASI = Path(__file__).resolve().parent.parent / ".env"
+
+# Üretimde kabul edilemez varsayılanlar
+_GUVENSIZ_VARSAYILANLAR = {
+    "CHANGE_ME_IN_PRODUCTION",
+    "CHANGE_ME",
+    "CHANGE_ME_FERNET_KEY",
+    "CHANGE_ME_RANDOM_32_CHARS",
+}
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_ENV_DOSYASI,
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -107,6 +125,59 @@ class Settings(BaseSettings):
 
     # WebSocket
     WS_HEARTBEAT_INTERVAL: int = 30
+
+    # CORS — virgülle ayrılmış origin listesi.
+    # Boş bırakılırsa development'ta http://localhost:3000 varsayılır.
+    # Üretimde kurumun gerçek alan adı yazılmalı:
+    #   CORS_ORIGINS=https://unibox.universite.edu.tr
+    # Tarayıcı istekleri normalde Next.js BFF proxy'sinden geçtiği için CORS
+    # devreye girmez; bu liste doğrudan erişim senaryoları içindir.
+    CORS_ORIGINS: str = ""
+
+    @property
+    def cors_origin_listesi(self) -> list[str]:
+        if self.CORS_ORIGINS.strip():
+            return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
+        return ["http://localhost:3000"] if self.APP_ENV == "development" else []
+
+    @model_validator(mode="after")
+    def _uretimde_guvenli_mi(self) -> "Settings":
+        """APP_ENV=production iken güvensiz varsayılanlarla açılmayı reddeder.
+
+        Bu değerler kaynak kodda yazılı olduğu için "varsayılan" değil, bilinen
+        sabitlerdir: SECRET_KEY bilinirse herkes geçerli bir admin JWT'si
+        imzalayabilir, FERNET_KEY bilinirse şifreli tüm veri okunabilir.
+
+        Sessizce açılmak, sorunu fark edilmez kılıyordu. Erken ve gürültülü
+        başarısız olmak, üretimde açık bir sistemden iyidir.
+        """
+        if self.APP_ENV != "production":
+            return self
+
+        sorunlar: list[str] = []
+        for ad in ("SECRET_KEY", "FERNET_KEY", "ADMIN_PASSWORD"):
+            if getattr(self, ad) in _GUVENSIZ_VARSAYILANLAR:
+                sorunlar.append(f"{ad} hâlâ şablon değerinde")
+        if len(self.SECRET_KEY) < 32:
+            sorunlar.append("SECRET_KEY en az 32 karakter olmalı")
+        if self.SMTP_BACKEND == "console":
+            sorunlar.append(
+                "SMTP_BACKEND='console' — e-postalar gönderilmez, yalnızca loglanır"
+            )
+        if not _ENV_DOSYASI.exists():
+            sorunlar.append(f"{_ENV_DOSYASI} bulunamadı; ayarlar varsayılanlardan geliyor")
+
+        if sorunlar:
+            raise ValueError(
+                "Üretim yapılandırması güvenli değil:\n  - "
+                + "\n  - ".join(sorunlar)
+                + "\n\nFERNET_KEY üretmek için:\n"
+                '  python -c "from cryptography.fernet import Fernet; '
+                'print(Fernet.generate_key().decode())"\n'
+                "DİKKAT: canlı veritabanı varsa FERNET_KEY'i YENİDEN ÜRETMEYİN, "
+                "mevcut şifreli veri okunamaz hâle gelir."
+            )
+        return self
 
     @property
     def upload_max_bytes(self) -> int:

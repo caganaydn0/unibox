@@ -71,6 +71,24 @@ def mask_body_for_log(body: str) -> str:
     return mask_pii(body)
 
 
+def mask_email_address(adres: str) -> str:
+    """Tek bir e-posta adresini log için kısaltır.
+
+        ahmet.yilmaz@gazi.edu.tr  ->  ah***@gazi.edu.tr
+
+    Alan adı korunuyor: hata ayıklarken hangi kurumun adresi olduğunu görmek
+    gerekiyor, ama kişiyi tanımlayan yerel kısım gizleniyor.
+
+    mask_pii() adresin TAMAMINI [EMAIL_MASKED] ile değiştirir; bu ise
+    "gönderim gerçekten doğru yere gitti mi" sorusunu cevaplayabilmek için
+    kısmi maskeleme yapar.
+    """
+    if not adres or "@" not in adres:
+        return "***"
+    yerel, _, alan = adres.rpartition("@")
+    return f"{yerel[:2]}***@{alan}" if yerel else f"***@{alan}"
+
+
 def has_pii(text: str) -> bool:
     """Metinde PII olup olmadığını kontrol eder (test/debug için)."""
     return bool(
