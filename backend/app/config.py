@@ -100,6 +100,51 @@ class Settings(BaseSettings):
     # sıfır olduğu noktada tutuluyor.
     RAG_MAX_DISTANCE: float = 0.60
 
+    # ---- Hibrit arama parametreleri -------------------------------------
+    # Bu değerler rag_engine.py'de modül sabiti olarak duruyordu ve ortamdan
+    # ayarlanamıyordu. Kalibrasyon notları buraya taşındı.
+
+    # Her iki aramadan füzyondan ÖNCE çekilen aday sayısı.
+    #
+    # 20'den 50'ye çıkarıldı ve bu, madde-farkındalıklı bölmeyle AYNI ANDA
+    # gitmek ZORUNDA: fixture korpusunda yönetmelik chunk sayısı 27 -> 84'e
+    # çıkıyor (toplam 52 -> 109). Tek bir yönetmelik (54 chunk) 20'lik havuzu
+    # tek başına doldurabilir ve kısa rehber dokümanlarını tamamen dışarı
+    # iter. Aynı hata daha önce chunk boyutu 150 kelimeye düşürülünce
+    # yaşanmıştı (recall@3 %70 -> %50, bkz. RAG_CHUNK_SIZE notu).
+    RAG_CANDIDATE_POOL: int = 50
+
+    # Reciprocal Rank Fusion sabiti. Standart 60; büyüdükçe sıralama
+    # farkları yumuşar, küçüldükçe ilk sıralar baskınlaşır.
+    RAG_RRF_K: int = 60
+
+    # Sorgunun intent'iyle etiketli chunk'lara eklenen bonus.
+    #
+    # 0.015'ten 0.003'e DÜŞÜRÜLDÜ. Gerekçe: RRF'de bir listede 1. sıra olmanın
+    # katkısı 1/(60+1) = 0.0164. Yani 0.015'lik bonus, tam bir birincilik
+    # kadar ağırdı — "eşit durumda etiketliyi öne al" değil, "etiketliyi
+    # zirveye taşı" demekti. Gerçek bir beraberlik kırıcının mertebesi
+    # 10. sıradan 5. sıraya çıkışın değeri kadardır: 1/65 - 1/70 = 0.0011.
+    RAG_INTENT_BONUS: float = 0.003
+
+    # ts_rank uzunluk normalizasyonu (PostgreSQL bit maskesi).
+    # 0 = normalizasyon yok, uzun chunk'ları kayırır.
+    # 1 = rank / (1 + log(uzunluk))  <-- seçilen
+    # İki farklı doküman tipiyle ölçülerek seçildi; norm=2 kısa dokümanlarda
+    # cazip görünüyor ama uzun mevzuat metnini eziyor.
+    RAG_FTS_NORMALIZATION: int = 1
+
+    # Sonuçta tek bir dokümandan en fazla kaç chunk yer alabilir.
+    #
+    # 2'den 3'e çıkarıldı. Sınırın varlık sebebi "bir PDF 20 chunk, rehberler
+    # 1'er chunk" dengesizliğiydi. Madde bazlı bölmeden sonra yönetmelik
+    # chunk'ları kendi kendine yeten maddeler hâline geliyor ve doğru cevap
+    # sıklıkla AYNI dokümandaki 2-3 komşu madde oluyor.
+    #
+    # Ayrıca: sınır artık sonucu k'nın altına düşürmüyor. Yetersiz kalırsa
+    # ikinci bir doldurma turu sınırı gevşetiyor (bkz. rag_engine.search).
+    RAG_MAX_CHUNKS_PER_DOC: int = 3
+
     # SMTP
     SMTP_BACKEND: str = "console"    # "console" | "smtp"
     SMTP_HOST: str = "localhost"

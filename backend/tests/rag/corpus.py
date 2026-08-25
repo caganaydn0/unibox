@@ -133,17 +133,25 @@ def run_migrations() -> None:
 # --------------------------------------------------------------------------- #
 
 def _fixture_damgası() -> str:
-    """Tüm fixture içeriğinin ve ilgili ayarların tek özeti."""
+    """Tüm fixture içeriğinin ve korpusu ETKİLEYEN her şeyin tek özeti.
+
+    DİKKAT: Korpusun içeriğini değiştirebilecek HER GİRDİ buraya girmeli.
+    Chunker sürümü başta unutulmuştu ve madde-farkındalıklı bölmeye geçişte
+    damga değişmediği için korpus önbellekten gelmeye devam etti; ölçüm
+    sessizce ESKİ chunk'lara karşı yapıldı. Yeni bir bölme parametresi
+    eklerken bu listeyi güncellemeyi unutmayın.
+    """
     from app.config import settings
+    from app.services.chunking import CHUNKER_SURUMU
 
     h = hashlib.sha256()
     for yol in sorted(FIXTURES.rglob("*")):
         if yol.is_file() and yol.suffix in {".pdf", ".jsonl"}:
             h.update(yol.name.encode("utf-8"))
             h.update(yol.read_bytes())
-    # Chunk/embedding ayarları değişirse korpus da değişmeli
     for ayar in (settings.EMBEDDING_MODEL, settings.EMBEDDING_DIMENSIONS,
-                 settings.RAG_CHUNK_SIZE, settings.RAG_CHUNK_OVERLAP):
+                 settings.RAG_CHUNK_SIZE, settings.RAG_CHUNK_OVERLAP,
+                 CHUNKER_SURUMU):
         h.update(str(ayar).encode("utf-8"))
     return h.hexdigest()[:16]
 
@@ -184,10 +192,12 @@ async def _doküman_ekle(rag, *, başlık: str, içerik: str, ham: bytes,
 
     doc_id = str(uuid4())
     şimdi = datetime.now(timezone.utc).replace(tzinfo=None)
-    parçalar = rag.split_text(içerik)
+    # split_with_meta: üretim yolunun aynısı. split_text kullanmak meta
+    # veriyi düşürür ve korpus üretimden farklı olurdu.
+    parçalar = rag.split_with_meta(içerik)
     etiket_json = json.dumps(etiketler, ensure_ascii=False)
 
-    gömüler = [await rag.embed_text(p) for p in parçalar]
+    gömüler = [await rag.embed_text(p.icerik) for p in parçalar]
 
     async with AsyncSessionLocal() as s:
         s.add(KnowledgeDocument(
@@ -208,8 +218,8 @@ async def _doküman_ekle(rag, *, başlık: str, içerik: str, ham: bytes,
         for i, (parça, gömü) in enumerate(zip(parçalar, gömüler)):
             s.add(DocumentChunk(
                 id=str(uuid4()), document_id=doc_id, chunk_index=i,
-                content=parça, embedding=gömü, tags_json=etiket_json,
-                word_count=len(parça.split()),
+                content=parça.icerik, embedding=gömü, tags_json=etiket_json,
+                meta_json=parça.meta, word_count=len(parça.icerik.split()),
             ))
         await s.commit()
     return len(parçalar)

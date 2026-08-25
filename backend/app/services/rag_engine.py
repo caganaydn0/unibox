@@ -22,49 +22,24 @@ from app.config import settings
 from app.db.models.document_chunk import DocumentChunk
 from app.db.models.knowledge_document import KnowledgeDocument, ProcessingStatus
 from app.db.session import AsyncSessionLocal
+from app.services.chunking import (
+    CHUNKER_SURUMU,
+    Parca,
+    madde_bazli_bol,
+    mevzuat_mi,
+)
 
 logger = logging.getLogger(__name__)
 
 # ---- Hibrit arama parametreleri ---------------------------------------------
-# Her iki aramadan kaç aday çekilecek (füzyondan önce).
-CANDIDATE_POOL = 20
-
-# Reciprocal Rank Fusion sabiti. Standart değer 60; büyüdükçe sıralama farkları
-# yumuşar, küçüldükçe ilk sıralar baskınlaşır.
-RRF_K = 60
-
-# Sorgunun intent'iyle etiketli chunk'lara eklenen bonus. RRF skorları
-# ~1/60 mertebesinde olduğu için bu değer "eşit durumda etiketliyi öne al"
-# etkisi yaratır, tek başına alakasız bir dokümanı zirveye taşımaz.
-INTENT_BONUS = 0.015
-
-# ts_rank uzunluk normalizasyonu (PostgreSQL bit maskesi).
-# 0 = normalizasyon yok. Bu varsayılan, uzun chunk'ları kayırır: eski taranmış
-# PDF chunk'ları ortalama 2330 karakter, yeni bilgi tabanı dokümanları 371.
-# Uzun metin daha çok sorgu kelimesi barındırdığı için ts_rank'te öne geçiyor
-# ve konuyla birebir ilgili kısa dokümanı bastırıyordu (ölçüldü: 13 hatanın
-# 8'inde 1. sırada aynı büyük PDF vardı).
-# 1 = rank / (1 + log(doküman uzunluğu)).
-#
-# Bu değer İKİ farklı doküman tipiyle birlikte ölçülerek seçildi:
-#   - kısa, konuya özel rehber metinleri (~370 karakter)
-#   - gerçek üniversite yönetmeliği chunk'ları (~2450 karakter)
-#
-#                    yönetmelik@3  yönetmelik@7  kısa@3  kısa@7
-#   norm=0                   75%           75%     80%     97%
-#   norm=1                   75%           81%     83%     93%   <-- seçilen
-#   norm=2                   38%           62%     87%     97%
-#
-# norm=2 yalnızca kısa dokümanlara bakılarak seçilirse cazip görünüyor ama
-# uzun mevzuat metnini eziyor — bilgi tabanı gerçek yönetmeliklerle
-# dolduğunda asıl ihtiyaç duyulan içerik bulunamaz hale geliyor.
-FTS_NORMALIZATION = 1
-
-# Sonuçta tek bir dokümandan en fazla kaç chunk yer alabilir.
-# Bilgi tabanı dengesiz: bir yönetmelik PDF'i 20 chunk, konuya özel rehberler
-# 1'er chunk. Sınır olmadan büyük doküman tüm slotları kapıp asıl aranan kısa
-# dokümanı bağlam penceresinin dışında bırakabiliyor.
-MAX_CHUNKS_PER_DOC = 2
+# Bu değerler artık config.py'de yaşıyor (ortamdan ayarlanabilsin diye) ve
+# kalibrasyon notları da oraya taşındı. Buradaki adlar yalnızca okunabilirlik
+# için; tek doğruluk kaynağı settings.
+CANDIDATE_POOL = settings.RAG_CANDIDATE_POOL
+RRF_K = settings.RAG_RRF_K
+INTENT_BONUS = settings.RAG_INTENT_BONUS
+FTS_NORMALIZATION = settings.RAG_FTS_NORMALIZATION
+MAX_CHUNKS_PER_DOC = settings.RAG_MAX_CHUNKS_PER_DOC
 
 
 def _turkish_tsvector(column):
@@ -228,9 +203,32 @@ class RagEngine:
         return self.decode_text(data)
 
     def split_text(self, text: str) -> list[str]:
-        """Metni ~500 kelimelik chunk'lara böl."""
-        chunks = self._splitter.split_text(text)
-        return [c for c in chunks if c.strip()]
+        """Metni chunk'lara böl (yalnızca içerik — meta veri olmadan).
+
+        Geriye dönük uyumluluk için korunuyor. Yeni kod split_with_meta()
+        kullanmalı; meta veri olmadan madde numarası/başlık kaybolur.
+        """
+        return [p.icerik for p in self.split_with_meta(text)]
+
+    def split_with_meta(self, text: str) -> list[Parca]:
+        """Metni yapısına göre böler.
+
+        Mevzuat metni (>= 3 madde) madde bazlı, diğer her şey eski sabit
+        uzunluk bölücüsüyle işlenir. Mod seçimi otomatik olduğu için
+        çağıranın doküman tipini bilmesi gerekmiyor ve rehber/SSS/DOCX
+        metinlerinde davranış aynen korunuyor.
+        """
+        if mevzuat_mi(text):
+            parçalar = madde_bazli_bol(text)
+            if parçalar:
+                return parçalar
+            logger.warning("Mevzuat sayıldı ama madde çıkarılamadı; sabit bölmeye düşülüyor.")
+
+        return [
+            Parca(icerik=c, meta={"v": CHUNKER_SURUMU, "kind": "plain"})
+            for c in self._splitter.split_text(text)
+            if c.strip()
+        ]
 
     # ------------------------------------------------------------------ #
     # İndeksleme
@@ -291,11 +289,11 @@ class RagEngine:
                 raise ValueError(
                     "Dosyadan metin çıkarılamadı (boş dosya veya taranmış/OCR'sız PDF)."
                 )
-            parçalar = self.split_text(metin)
+            parçalar = self.split_with_meta(metin)
             if not parçalar:
                 raise ValueError("Metin parçalanamadı.")
 
-            gömüler = [await self.embed_text(p) for p in parçalar]
+            gömüler = [await self.embed_text(p.icerik) for p in parçalar]
         except Exception as exc:
             await self._indeksleme_basarisiz(doc_id, exc)
             logger.error("İndeksleme hatası (doc=%s): %s", doc_id, exc, exc_info=True)
@@ -311,10 +309,11 @@ class RagEngine:
                     DocumentChunk(
                         document_id=doc_id,
                         chunk_index=i,
-                        content=parça,
+                        content=parça.icerik,
                         embedding=gömü,
                         tags_json=etiket_json,
-                        word_count=len(parça.split()),
+                        meta_json=parça.meta,
+                        word_count=len(parça.icerik.split()),
                     )
                     for i, (parça, gömü) in enumerate(zip(parçalar, gömüler))
                 ])
@@ -409,22 +408,6 @@ class RagEngine:
                 "yalnızca sözcüksel arama ile devam ediliyor.", exc_info=True,
             )
 
-        # --- Kapsam kontrolü ---
-        # En yakın chunk bile uzaksa soru bilgi tabanının dışındadır. Boş
-        # dönüyoruz: LLM bağlamsız kalır ve prompt'undaki "bilgi yoksa öğrenci
-        # işlerine yönlendir" kuralına düşer. Aksi halde alakasız chunk'ları
-        # okuyup cevap uyduruyor (ölçüldü: otopark ücretine "aylık 150 TL").
-        #
-        # Yalnızca vektör arama ÇALIŞTIYSA uygulanır — başarısız olduysa
-        # elimizde mesafe yok, sözcüksel arama ile devam etmek daha doğru.
-        if vektör_çalıştı and (en_yakın is None or en_yakın > settings.RAG_MAX_DISTANCE):
-            logger.info(
-                "Kapsam dışı sayıldı (en yakın mesafe=%s > %s): %.80s",
-                f"{en_yakın:.3f}" if en_yakın is not None else "yok",
-                settings.RAG_MAX_DISTANCE, question,
-            )
-            return []
-
         # --- 2. Sözcüksel arama ---
         fts_ids: list[str] = []
         try:
@@ -447,6 +430,32 @@ class RagEngine:
                 "Sözcüksel arama başarısız — yalnızca anlamsal arama ile "
                 "devam ediliyor.", exc_info=True,
             )
+
+        # --- Kapsam kontrolü (füzyondan SONRA, iki sinyale birden bakarak) ---
+        #
+        # Eskiden bu kontrol vektör aramasının hemen ardındaydı ve tek başına
+        # erken return yapıyordu. Sonuç: hibrit aramanın SÖZCÜKSEL yarısı,
+        # semantik yarı eşiği geçemediğinde HİÇ çalışmıyordu — üstelik
+        # vektör tarafının Türkçe'de zayıf olduğu (recall@1 %19) kodun kendi
+        # yorumunda yazıyordu. Kapı bekçisi, zayıf olduğu bilinen bileşendi.
+        #
+        # Artık VE koşulu: soru ancak HEM anlamsal olarak uzaksa HEM DE
+        # hiçbir sözcüksel eşleşme yoksa kapsam dışı sayılır. Koşul bir
+        # kesişim olduğu için kapsam içi kayıp matematiksel olarak ancak
+        # azalabilir.
+        #
+        # Not: eşik asıl savunma hattı DEĞİL. Ölçüldü (config.py'deki
+        # kalibrasyon notu): eşik tamamen kapalıyken bile prompt kuralı 6
+        # kapsam dışı sorunun 6'sını doğru reddetti. Bu yüzden burada aşırı
+        # mühendislik yapmıyoruz.
+        uzak = en_yakın is None or en_yakın > settings.RAG_MAX_DISTANCE
+        if vektör_çalıştı and uzak and not fts_ids:
+            logger.info(
+                "Kapsam dışı sayıldı (mesafe=%s > %s, sözcüksel isabet=0): %.80s",
+                f"{en_yakın:.3f}" if en_yakın is not None else "yok",
+                settings.RAG_MAX_DISTANCE, question,
+            )
+            return []
 
         # --- 3. Reciprocal Rank Fusion ---
         skorlar: dict[str, float] = {}
@@ -485,20 +494,46 @@ class RagEngine:
             skor = skorlar[cid]
             if intent_type and intent_type in etiketler:
                 skor += INTENT_BONUS
-            sonuç.append((skor, content, description or filename, etiketler, doc_id))
+            sonuç.append((cid, skor, content, description or filename, etiketler, doc_id))
 
-        sonuç.sort(key=lambda r: r[0], reverse=True)
+        sonuç.sort(key=lambda r: r[1], reverse=True)
 
-        # Doküman çeşitliliği — tek kaynak tüm slotları kapmasın
+        # --- 6. Doküman çeşitliliği + doldurma turu ---
+        #
+        # İlk tur: tek kaynak tüm slotları kapmasın diye doküman başına sınır.
+        #
+        # İkinci tur (YENİ): sınır yüzünden k'ya ulaşılamadıysa kalan slotlar
+        # sınır yok sayılarak doldurulur. Eskiden bu tur yoktu ve sonuç
+        # SESSİZCE k'nın altına düşüyordu: MAX_CHUNKS_PER_DOC=2 ile 7 sonuç
+        # için en az 4 ayrı doküman gerekiyordu, konuyla eşleşen 2 doküman
+        # varsa en fazla 4 chunk dönüyordu ve hiçbir uyarı yoktu.
+        seçilen_id: set[str] = set()
         seçilen: list[tuple[str, str, list[str]]] = []
         doküman_sayacı: collections.Counter[str] = collections.Counter()
-        for _, content, etiket, tags, doc_id in sonuç:
+
+        for cid, _, content, etiket, tags, doc_id in sonuç:
+            if len(seçilen) >= k:
+                break
             if doküman_sayacı[doc_id] >= MAX_CHUNKS_PER_DOC:
                 continue
             doküman_sayacı[doc_id] += 1
+            seçilen_id.add(cid)
             seçilen.append((content, etiket, tags))
-            if len(seçilen) >= k:
-                break
+
+        if len(seçilen) < k:
+            for cid, _, content, etiket, tags, doc_id in sonuç:
+                if len(seçilen) >= k:
+                    break
+                if cid in seçilen_id:
+                    continue
+                seçilen_id.add(cid)
+                seçilen.append((content, etiket, tags))
+
+        if len(seçilen) < k:
+            logger.info(
+                "Aday havuzu yetersiz: %d/%d chunk döndürüldü (soru: %.60s)",
+                len(seçilen), k, question,
+            )
         return seçilen
 
     async def query(self, question: str, intent_type: str | None = None) -> str:
