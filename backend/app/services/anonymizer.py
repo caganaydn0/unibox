@@ -17,8 +17,16 @@ import re
 _TCKN_RE = re.compile(r"\b([1-9][0-9]{10})\b")
 
 # Türk telefon numaraları: +90/0 ile başlayan, çeşitli formatlar
+#
+# Baştaki sınır `\b` DEĞİL: `\b` kelime karakteriyle kelime-olmayan karakter
+# arasında bir geçiş arar. "+" kelime karakteri olmadığı için, önünde boşluk
+# olan (veya satır başındaki) bir "+90" ile arasında hiçbir zaman sınır oluşmaz
+# ve `\b\+90` alternatifi PRATİKTE HİÇ EŞLEŞMEZ — uluslararası formatlı
+# numaralar maskelenmeden geçiyordu (testle yakalandı).
+# Yerine negatif geriye-bakış: numaranın ortasından yakalamayı önler ama
+# boşluk/iki nokta/satır başı gibi konumlara izin verir.
 _PHONE_RE = re.compile(
-    r"\b(\+90|0)[\s\-\.]?[0-9]{3}[\s\-\.]?[0-9]{3}[\s\-\.]?[0-9]{2}[\s\-\.]?[0-9]{2}\b"
+    r"(?<![\w+])(\+90|0)[\s\-\.]?[0-9]{3}[\s\-\.]?[0-9]{3}[\s\-\.]?[0-9]{2}[\s\-\.]?[0-9]{2}\b"
 )
 
 # E-posta adresleri
@@ -98,12 +106,58 @@ _PII_TALEP_RE = re.compile(
 # [Adınız Soyadınız], [İsim], [academic_year] gibi doldurulmamış yer tutucular
 _PLACEHOLDER_RE = re.compile(r"\[[^\]\n]{1,60}\]")
 
+# Satır gerçekten bilgi İSTİYOR mu? Sadece PII terimi geçmesi yetmez.
+# Etiket satırı ("TCKN:"), soru, veya talep fiili arıyoruz.
+_TALEP_ISARETI_RE = re.compile(
+    r":\s*$"
+    r"|\?\s*$"
+    r"|\b(?:belirt|yaz|gir|ilet|sağla|sagla|paylaş|paylas|ekle|gönder|gonder"
+    r"|bildir|doldur|beyan|sun|göster|goster)\w*\b",
+    re.IGNORECASE,
+)
+
+# Bu uzunluğun altındaki bir satır, PII terimi içeriyorsa zaten bir etiket
+# veya başlıktır ("Öğrenci Numarası"), düzyazı değildir.
+_KISA_SATIR_ESIGI = 60
+
 
 def strip_pii_requests(text: str) -> str:
-    """PII isteyen/paylaşan satırları tamamen kaldırır."""
+    """PII İSTEYEN satırları kaldırır.
+
+    Önceki hâli PII terimi geçen HER satırı komple siliyordu ve meşru
+    içeriği yok ediyordu — örneğin
+
+        "[Adınız Soyadınız] adına transkript belgesi talep ediyorum."
+
+    satırının tamamı gidiyor, e-posta anlamsızlaşıyordu (testle yakalandı).
+
+    Artık iki koşul aranıyor:
+      1. PII terimi köşeli parantezin DIŞINDA geçiyor olmalı. Yalnızca
+         yer tutucu içindeyse ([Adınız Soyadınız]) o iş strip_placeholders'ın.
+      2. Satır bir talep gibi görünmeli: iki nokta/soru işaretiyle bitmeli,
+         bir talep fiili içermeli ya da kısa bir etiket satırı olmalı.
+
+    Böylece "T.C. Kimlik Numaranız:" gidiyor, düzyazı cümle kalıyor.
+    """
     if not text:
         return text
-    return _PII_TALEP_RE.sub("", text)
+
+    tutulan: list[str] = []
+    for satır in text.splitlines():
+        # Yer tutucu içeriğini çıkarıp bak: terim yalnızca parantez içindeyse
+        # bu satır bir PII TALEBİ değildir.
+        parantezsiz = _PLACEHOLDER_RE.sub("", satır)
+        if not _PII_TALEP_RE.search(parantezsiz):
+            tutulan.append(satır)
+            continue
+
+        çıplak = parantezsiz.strip()
+        talep_gibi = bool(_TALEP_ISARETI_RE.search(çıplak)) or len(çıplak) < _KISA_SATIR_ESIGI
+        if talep_gibi:
+            continue  # satırı at
+        tutulan.append(satır)
+
+    return "\n".join(tutulan)
 
 
 def strip_placeholders(text: str) -> str:
@@ -167,7 +221,15 @@ def drop_orphan_intros(text: str) -> str:
 
 
 def sanitize_draft_body(text: str) -> str:
-    """Giden e-posta taslağı için tam temizlik zinciri."""
+    """Giden e-posta taslağı için tam temizlik zinciri.
+
+    None'a karşı korunuyor: LLM {"subject": "...", "body": null} dönerse
+    email_workflow'daki draft_data.get("body", raw) çağrısı varsayılana
+    DÜŞMEZ, None döner — anahtar mevcut ama değeri null. Guard olmadan
+    taslak üretimi TypeError ile çöküyordu.
+    """
+    if not text:
+        return text
     text = strip_pii_requests(text)
     text = strip_placeholders(text)
     text = drop_orphan_intros(text)

@@ -57,3 +57,23 @@ packages = ["app"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+# backend/ kökünü sys.path'e ekler; scriptlerdeki elle sys.path.insert
+# hilesinin yerini alır (8 script bunu kopyalıyordu).
+pythonpath = ["."]
+# Ölçüm testleri canlı servis gerektiriyor; CI'da yalnızca saf testler koşar.
+#   uv run pytest -m "not rag_eval and not slow"   # DB/Ollama gerekmez
+#   uv run pytest -m rag_eval                      # Postgres + Ollama gerekir
+#   uv run pytest -m slow                          # ayrıca LLM üretimi yapar
+markers = [
+    "rag_eval: canlı Postgres + Ollama ve indekslenmiş fixture korpusu gerektirir",
+    "slow: LLM üretimi yapar; dakikalar sürebilir ve tam deterministik değildir",
+]
+filterwarnings = [
+    # datetime.utcnow() Python 3.12'de deprecated; kod tabanında hâlâ var
+    # (rag_engine.py, knowledge.py). Ayrı bir iş olarak temizlenecek.
+    "ignore::DeprecationWarning:app.*",
+]
