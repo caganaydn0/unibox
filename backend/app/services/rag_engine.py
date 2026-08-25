@@ -9,7 +9,8 @@ import collections
 import io
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
+from pathlib import Path
 
 import httpx
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -86,11 +87,39 @@ def _turkish_tsquery(soru: str):
     Böylece Postgres'in kendi Türkçe stopword ve stemmer'ı devreye girer,
     kullanıcı metni doğrudan sorguya gömülmediği için enjeksiyon riski de olmaz.
 
+    Her lexeme quote_literal ile tırnaklanıyor. İki sebep:
+
+    1. DOĞRULUK: tsvector_to_array bize zaten NORMALİZE EDİLMİŞ lexeme'i
+       veriyor. Tırnaksız bıraktığımızda tsquery ayrıştırıcısı onu yeniden
+       yorumluyor ve bileşik lexeme'leri (URL, dosya yolu, e-posta) bölerek
+       tsvector'dekiyle eşleşmeyen bir sorguya çevirebiliyor. Tırnaklı hâli
+       tsvector'de duranla birebir eşleşir.
+
+    2. SAĞLAMLIK: tsquery'de `! & | ( ) : < '` özel karakter. Bir lexeme
+       bunlardan birini içerirse tırnaksız cast "syntax error in tsquery"
+       fırlatır. (search() bunu artık yakalıyor ama o zaman da sözcüksel
+       aramayı tamamen kaybederdik.)
+
     Tüm kelimeler stopword ise sonuç boş tsquery olur; bu hata vermez,
     yalnızca hiçbir satırla eşleşmez.
     """
-    lexemes = func.tsvector_to_array(func.to_tsvector(literal_column("'turkish'"), soru))
-    return cast(func.array_to_string(lexemes, " | "), TSQUERY)
+    return cast(
+        func.array_to_string(
+            func.array(
+                select(func.quote_literal(literal_column("l")))
+                .select_from(
+                    func.unnest(
+                        func.tsvector_to_array(
+                            func.to_tsvector(literal_column("'turkish'"), soru)
+                        )
+                    ).alias("l")
+                )
+                .scalar_subquery()
+            ),
+            " | ",
+        ),
+        TSQUERY,
+    )
 
 
 class RagEngine:
@@ -144,6 +173,60 @@ class RagEngine:
         pages = [page.extract_text() or "" for page in reader.pages]
         return "\n".join(pages)
 
+    @staticmethod
+    def decode_text(data: bytes) -> str:
+        """Düz metni çöz — UTF-8, olmazsa Windows-1254.
+
+        Türk kurumlarından gelen metin dosyaları sıklıkla cp1254 (Windows
+        Türkçe) kodlanmış oluyor. Kör bir utf-8 decode UnicodeDecodeError
+        ile patlıyor ve doküman FAILED oluyordu.
+        """
+        for kodlama in ("utf-8-sig", "utf-8", "cp1254"):
+            try:
+                return data.decode(kodlama)
+            except UnicodeDecodeError:
+                continue
+        # Son çare: bozuk baytları kaybetmek, dokümanı tamamen kaybetmekten iyi
+        return data.decode("utf-8", errors="replace")
+
+    @staticmethod
+    def extract_text_from_docx(data: bytes) -> str:
+        from docx import Document  # yerel import: yalnızca .docx yüklenince gerekir
+
+        belge = Document(io.BytesIO(data))
+        parçalar = [p.text for p in belge.paragraphs]
+        # Tablolar da içerik taşıyor — yönetmelik ekleri sıklıkla tablo hâlinde
+        for tablo in belge.tables:
+            for satır in tablo.rows:
+                parçalar.append(" | ".join(h.text.strip() for h in satır.cells))
+        return "\n".join(parçalar)
+
+    def extract_text(self, data: bytes, mime_type: str = "", filename: str = "") -> str:
+        """Dosya tipine göre doğru çıkarıcıyı seçer.
+
+        Eskiden index_document KOŞULSUZ olarak PdfReader çağırıyordu; oysa
+        config.allowed_mime_types TXT, Markdown ve DOCX'i de kabul ediyor.
+        Sonuç: admin panelinden yüklenen her metin dosyası FAILED oluyor ve
+        yeniden indeksleme de aynı yola gittiği için kurtarılamıyordu.
+
+        MIME'a tek başına güvenmiyoruz: tarayıcılar Markdown'ı tutarsız
+        gönderiyor (text/plain, text/markdown, application/octet-stream).
+        Uzantı ikinci sinyal olarak kullanılıyor.
+        """
+        uzantı = Path(filename).suffix.lower()
+
+        if mime_type == "application/pdf" or uzantı == ".pdf":
+            return self.extract_text_from_pdf(data)
+        if uzantı == ".docx" or "wordprocessingml" in mime_type:
+            return self.extract_text_from_docx(data)
+        if mime_type.startswith("text/") or uzantı in {".txt", ".md", ".markdown"}:
+            return self.decode_text(data)
+
+        # Bilinmeyen tip: PDF imzası varsa PDF say, yoksa metin olarak dene.
+        if data[:5] == b"%PDF-":
+            return self.extract_text_from_pdf(data)
+        return self.decode_text(data)
+
     def split_text(self, text: str) -> list[str]:
         """Metni ~500 kelimelik chunk'lara böl."""
         chunks = self._splitter.split_text(text)
@@ -152,80 +235,109 @@ class RagEngine:
     # ------------------------------------------------------------------ #
     # İndeksleme
     # ------------------------------------------------------------------ #
+    async def _indeksleme_basarisiz(self, doc_id: str, exc: Exception) -> None:
+        """Dokümanı FAILED işaretler — KENDİ temiz oturumunda.
+
+        Ayrı oturum şart: hata anındaki oturumda bekleyen (commit edilmemiş)
+        DELETE olabilir. O oturumda commit çağırmak silmeyi de kalıcı yapardı.
+        """
+        try:
+            async with AsyncSessionLocal() as session:
+                doc = await session.get(KnowledgeDocument, doc_id)
+                if doc:
+                    doc.status = ProcessingStatus.FAILED
+                    doc.processing_error = str(exc)[:2000]
+                    await session.commit()
+        except Exception:
+            logger.exception("Doküman FAILED olarak işaretlenemedi: %s", doc_id)
+
     async def index_document(self, doc_id: str) -> None:
-        """PDF → metin → chunk → embed → pgvector'e yaz."""
+        """Doküman → metin → chunk → embed → pgvector.
+
+        ÜÇ AYRI OTURUM kullanılıyor; bu bilinçli bir tasarım:
+
+        1. Eski hâli tek bir oturumu tüm embedding HTTP çağrıları boyunca açık
+           tutuyordu. 47 chunk'lık bir doküman için havuzdaki bir bağlantı
+           (pool_size=5) dakikalarca bloke oluyordu.
+
+        2. Daha ciddisi VERİ KAYBIYDI: eski chunk'lar DELETE ediliyor, sonra
+           embedding döngüsü başlıyordu. Döngüde bir Ollama timeout'u olursa
+           except bloğundaki commit() bekleyen DELETE'i de KALICI yapıyordu.
+           Sonuç: daha önce çalışan bir doküman FAILED + sıfır chunk hâline
+           geliyor, üstelik chunk_count güncellenmediği için arayüz hâlâ eski
+           sayıyı ("20 chunk") gösteriyordu.
+
+        Artık silme ve yazma tek bir transaction'da, tüm embedding'ler
+        hazırlandıktan SONRA yapılıyor. Hata hâlinde eski chunk'lara
+        dokunulmaz; doküman aramada çalışmaya devam eder.
+        """
+        # --- 1. Oturum: dokümanı oku, PROCESSING işaretle, oturumu KAPAT ---
         async with AsyncSessionLocal() as session:
-            result = await session.execute(
-                select(KnowledgeDocument).where(KnowledgeDocument.id == doc_id)
-            )
-            doc = result.scalar_one_or_none()
+            doc = await session.get(KnowledgeDocument, doc_id)
             if not doc:
                 logger.error("Doküman bulunamadı: %s", doc_id)
                 return
-
+            veri = doc.file_data
+            mime = doc.mime_type
+            etiket_json = doc.tags_json
+            dosya_adı = doc.original_filename
             doc.status = ProcessingStatus.PROCESSING
             await session.commit()
 
-            try:
-                # 1. PDF'den metin çıkar
-                full_text = self.extract_text_from_pdf(doc.file_data)
-                if not full_text.strip():
-                    raise ValueError("PDF'den metin çıkarılamadı (boş dosya veya taranmış PDF).")
+        # --- 2. Oturumsuz: ağır iş (metin çıkarma + embedding) ---
+        try:
+            metin = self.extract_text(veri, mime, dosya_adı)
+            if not metin.strip():
+                raise ValueError(
+                    "Dosyadan metin çıkarılamadı (boş dosya veya taranmış/OCR'sız PDF)."
+                )
+            parçalar = self.split_text(metin)
+            if not parçalar:
+                raise ValueError("Metin parçalanamadı.")
 
-                # 2. Chunk'lara böl
-                chunks = self.split_text(full_text)
-                if not chunks:
-                    raise ValueError("Metin parçalanamadı.")
+            gömüler = [await self.embed_text(p) for p in parçalar]
+        except Exception as exc:
+            await self._indeksleme_basarisiz(doc_id, exc)
+            logger.error("İndeksleme hatası (doc=%s): %s", doc_id, exc, exc_info=True)
+            raise
 
-                # 3. Mevcut chunk'ları temizle (reindex durumunda)
+        # --- 3. Oturum: sil + yaz, TEK transaction ---
+        try:
+            async with AsyncSessionLocal() as session:
                 await session.execute(
                     delete(DocumentChunk).where(DocumentChunk.document_id == doc_id)
                 )
-
-                # 4. Her chunk için embed et ve kaydet
-                tags_json = doc.tags_json
-                chunk_models = []
-                for idx, chunk_text in enumerate(chunks):
-                    embedding = await self.embed_text(chunk_text)
-                    chunk_model = DocumentChunk(
+                session.add_all([
+                    DocumentChunk(
                         document_id=doc_id,
-                        chunk_index=idx,
-                        content=chunk_text,
-                        embedding=embedding,
-                        tags_json=tags_json,
-                        word_count=len(chunk_text.split()),
+                        chunk_index=i,
+                        content=parça,
+                        embedding=gömü,
+                        tags_json=etiket_json,
+                        word_count=len(parça.split()),
                     )
-                    chunk_models.append(chunk_model)
-
-                session.add_all(chunk_models)
-
-                # 5. Doküman durumunu güncelle
+                    for i, (parça, gömü) in enumerate(zip(parçalar, gömüler))
+                ])
+                doc = await session.get(KnowledgeDocument, doc_id)
                 doc.status = ProcessingStatus.INDEXED
-                doc.indexed_at = datetime.utcnow()
-                doc.chunk_count = len(chunk_models)
+                doc.indexed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                doc.chunk_count = len(parçalar)
                 doc.processing_error = None
                 await session.commit()
+        except Exception as exc:
+            await self._indeksleme_basarisiz(doc_id, exc)
+            logger.error("Chunk yazma hatası (doc=%s): %s", doc_id, exc, exc_info=True)
+            raise
 
-                logger.info(
-                    "Doküman indekslendi: %s (%d chunk)", doc_id, len(chunk_models)
-                )
+        logger.info("Doküman indekslendi: %s (%d chunk)", doc_id, len(parçalar))
 
-                from app.core.ws_manager import ws_manager
-                await ws_manager.broadcast_to_admins({
-                    "type": "document_indexed",
-                    "doc_id": doc_id,
-                    "filename": doc.original_filename,
-                    "chunk_count": len(chunk_models),
-                })
-
-            except Exception as exc:
-                doc.status = ProcessingStatus.FAILED
-                doc.processing_error = str(exc)
-                await session.commit()
-                logger.error(
-                    "İndeksleme hatası (doc=%s): %s", doc_id, exc, exc_info=True
-                )
-                raise
+        from app.core.ws_manager import ws_manager
+        await ws_manager.broadcast_to_admins({
+            "type": "document_indexed",
+            "doc_id": doc_id,
+            "filename": dosya_adı,
+            "chunk_count": len(parçalar),
+        })
 
     # ------------------------------------------------------------------ #
     # Sorgu (RAG retrieval)
@@ -261,58 +373,92 @@ class RagEngine:
             KnowledgeDocument.status == ProcessingStatus.INDEXED,
         )
 
-        async with AsyncSessionLocal() as session:
-            # --- 1. Anlamsal arama ---
+        # --- 1. Anlamsal arama ---
+        #
+        # Embedding çağrısı BİLİNÇLİ olarak oturum bloğunun DIŞINDA: eskiden
+        # havuzdan bir bağlantı, Ollama gidiş-dönüşü boyunca tutuluyordu
+        # (pool_size=5 + overflow=10 → 15 eşzamanlı sohbet havuzu tüketir).
+        #
+        # İki geri getirim BAĞIMSIZ ARIZA ALANI. Eskiden vektör arama ikisinin
+        # de ön koşuluydu: Ollama kapalıysa embed_text istisnası doğrudan
+        # sohbet isteğini 500'e çeviriyordu — oysa sözcüksel arama Ollama
+        # gerektirmiyor ve tek başına iş görebilir.
+        vek_ids: list[str] = []
+        en_yakın: float | None = None
+        vektör_çalıştı = False
+        try:
             question_embedding = await self.embed_text(question)
-            mesafe = DocumentChunk.embedding.cosine_distance(question_embedding)
-            vek_stmt = (
-                select(DocumentChunk.id, mesafe.label("mesafe"))
-                .join(KnowledgeDocument, DocumentChunk.document_id == KnowledgeDocument.id)
-                .where(*görünür, DocumentChunk.embedding.isnot(None))
-                .order_by(mesafe)
-                .limit(CANDIDATE_POOL)
-            )
-            vek_satırlar = (await session.execute(vek_stmt)).all()
-
-            # --- Kapsam kontrolü ---
-            # En yakın chunk bile uzaksa soru bilgi tabanının dışındadır.
-            # Bu durumda boş dönüyoruz: LLM bağlamsız kalır ve prompt'undaki
-            # "bilgi yoksa öğrenci işlerine yönlendir" kuralına düşer.
-            # Aksi halde alakasız 7 chunk'ı okuyup cevap uyduruyor
-            # (ölçüldü: otopark ücreti sorusuna "aylık 150 TL" uydurdu).
-            if not vek_satırlar or float(vek_satırlar[0][1]) > settings.RAG_MAX_DISTANCE:
-                en_yakın = float(vek_satırlar[0][1]) if vek_satırlar else None
-                logger.info(
-                    "Kapsam dışı sayıldı (en yakın mesafe=%s > %s): %.80s",
-                    f"{en_yakın:.3f}" if en_yakın is not None else "yok",
-                    settings.RAG_MAX_DISTANCE, question,
+            async with AsyncSessionLocal() as session:
+                mesafe = DocumentChunk.embedding.cosine_distance(question_embedding)
+                vek_stmt = (
+                    select(DocumentChunk.id, mesafe.label("mesafe"))
+                    .join(KnowledgeDocument, DocumentChunk.document_id == KnowledgeDocument.id)
+                    .where(*görünür, DocumentChunk.embedding.isnot(None))
+                    # id ile beraberlik kırma: eşit mesafede sıra rastgele
+                    # olmasın, ölçümler koşular arasında oynamasın.
+                    .order_by(mesafe, DocumentChunk.id)
+                    .limit(CANDIDATE_POOL)
                 )
-                return []
-
+                vek_satırlar = (await session.execute(vek_stmt)).all()
             vek_ids = [r[0] for r in vek_satırlar]
-
-            # --- 2. Sözcüksel arama ---
-            tsv = _turkish_tsvector(DocumentChunk.content)
-            tsq = _turkish_tsquery(question)
-            fts_stmt = (
-                select(DocumentChunk.id)
-                .join(KnowledgeDocument, DocumentChunk.document_id == KnowledgeDocument.id)
-                .where(*görünür, tsv.op("@@")(tsq))
-                .order_by(func.ts_rank(tsv, tsq, FTS_NORMALIZATION).desc())
-                .limit(CANDIDATE_POOL)
+            en_yakın = float(vek_satırlar[0][1]) if vek_satırlar else None
+            vektör_çalıştı = True
+        except Exception:
+            logger.warning(
+                "Anlamsal arama başarısız (Ollama erişilemiyor olabilir) — "
+                "yalnızca sözcüksel arama ile devam ediliyor.", exc_info=True,
             )
-            fts_ids = list((await session.execute(fts_stmt)).scalars())
 
-            # --- 3. Reciprocal Rank Fusion ---
-            skorlar: dict[str, float] = {}
-            for liste in (vek_ids, fts_ids):
-                for sıra, cid in enumerate(liste):
-                    skorlar[cid] = skorlar.get(cid, 0.0) + 1.0 / (RRF_K + sıra + 1)
+        # --- Kapsam kontrolü ---
+        # En yakın chunk bile uzaksa soru bilgi tabanının dışındadır. Boş
+        # dönüyoruz: LLM bağlamsız kalır ve prompt'undaki "bilgi yoksa öğrenci
+        # işlerine yönlendir" kuralına düşer. Aksi halde alakasız chunk'ları
+        # okuyup cevap uyduruyor (ölçüldü: otopark ücretine "aylık 150 TL").
+        #
+        # Yalnızca vektör arama ÇALIŞTIYSA uygulanır — başarısız olduysa
+        # elimizde mesafe yok, sözcüksel arama ile devam etmek daha doğru.
+        if vektör_çalıştı and (en_yakın is None or en_yakın > settings.RAG_MAX_DISTANCE):
+            logger.info(
+                "Kapsam dışı sayıldı (en yakın mesafe=%s > %s): %.80s",
+                f"{en_yakın:.3f}" if en_yakın is not None else "yok",
+                settings.RAG_MAX_DISTANCE, question,
+            )
+            return []
 
-            if not skorlar:
-                return []
+        # --- 2. Sözcüksel arama ---
+        fts_ids: list[str] = []
+        try:
+            async with AsyncSessionLocal() as session:
+                tsv = _turkish_tsvector(DocumentChunk.content)
+                tsq = _turkish_tsquery(question)
+                fts_stmt = (
+                    select(DocumentChunk.id)
+                    .join(KnowledgeDocument, DocumentChunk.document_id == KnowledgeDocument.id)
+                    .where(*görünür, tsv.op("@@")(tsq))
+                    .order_by(
+                        func.ts_rank(tsv, tsq, FTS_NORMALIZATION).desc(),
+                        DocumentChunk.id,
+                    )
+                    .limit(CANDIDATE_POOL)
+                )
+                fts_ids = list((await session.execute(fts_stmt)).scalars())
+        except Exception:
+            logger.warning(
+                "Sözcüksel arama başarısız — yalnızca anlamsal arama ile "
+                "devam ediliyor.", exc_info=True,
+            )
 
-            # --- 4. Adayların içeriğini çek ---
+        # --- 3. Reciprocal Rank Fusion ---
+        skorlar: dict[str, float] = {}
+        for liste in (vek_ids, fts_ids):
+            for sıra, cid in enumerate(liste):
+                skorlar[cid] = skorlar.get(cid, 0.0) + 1.0 / (RRF_K + sıra + 1)
+
+        if not skorlar:
+            return []
+
+        # --- 4. Adayların içeriğini çek ---
+        async with AsyncSessionLocal() as session:
             satırlar = (await session.execute(
                 select(
                     DocumentChunk.id,

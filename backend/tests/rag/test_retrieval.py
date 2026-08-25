@@ -188,3 +188,56 @@ async def test_arama_dusmanca_girdide_patlamaz(korpus, girdi: str) -> None:
 
     sonuç = await RagEngine().search(girdi, None)
     assert isinstance(sonuç, list)
+
+
+# --------------------------------------------------------------------------- #
+# 4. Kısmi arıza toleransı — iki geri getirim bağımsız olmalı
+# --------------------------------------------------------------------------- #
+
+async def test_ollama_kapaliyken_sozcuksel_arama_devam_eder(korpus, monkeypatch) -> None:
+    """Anlamsal arama çökerse sözcüksel arama tek başına iş görmeli.
+
+    Eskiden vektör arama ikisinin de ön koşuluydu: embed_text istisnası
+    doğrudan sohbet isteğini 500'e çeviriyordu. Oysa PostgreSQL tam metin
+    araması Ollama'ya hiç ihtiyaç duymuyor — bilgi tabanı erişilebilirken
+    öğrenciye hata döndürmek gereksiz.
+    """
+    from app.services.rag_engine import RagEngine
+
+    async def ollama_kapali(self, text: str):
+        raise ConnectionError("Ollama erişilemiyor (simüle edilmiş)")
+
+    monkeypatch.setattr(RagEngine, "embed_text", ollama_kapali)
+
+    # Anahtar kelimesi bilgi tabanında birebir geçen bir sorgu
+    sonuç = await RagEngine().search("transkript belgesi", None)
+    assert sonuç, "Ollama kapalıyken sözcüksel arama sonuç döndürmeliydi"
+
+
+async def test_sozcuksel_arama_cokerse_anlamsal_devam_eder(korpus, monkeypatch) -> None:
+    """Simetrik durum: FTS bozulursa vektör araması tek başına iş görmeli."""
+    import app.services.rag_engine as motor
+
+    def bozuk_tsquery(soru: str):
+        raise RuntimeError("tsquery ayrıştırma hatası (simüle edilmiş)")
+
+    monkeypatch.setattr(motor, "_turkish_tsquery", bozuk_tsquery)
+
+    sonuç = await motor.RagEngine().search("Doktora yeterlik sınavı şartları", None)
+    assert sonuç, "FTS bozukken anlamsal arama sonuç döndürmeliydi"
+
+
+async def test_her_ikisi_de_cokerse_bos_doner(korpus, monkeypatch) -> None:
+    """Hiçbir durumda istisna sızmamalı — LLM bağlamsız kalıp geri çekilir."""
+    import app.services.rag_engine as motor
+
+    async def ollama_kapali(self, text: str):
+        raise ConnectionError("Ollama erişilemiyor")
+
+    def bozuk_tsquery(soru: str):
+        raise RuntimeError("tsquery hatası")
+
+    monkeypatch.setattr(motor.RagEngine, "embed_text", ollama_kapali)
+    monkeypatch.setattr(motor, "_turkish_tsquery", bozuk_tsquery)
+
+    assert await motor.RagEngine().search("transkript", None) == []
