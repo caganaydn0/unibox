@@ -15,8 +15,14 @@ logger = logging.getLogger(__name__)
 
 class BaseLLMProvider(ABC):
     @abstractmethod
-    async def generate(self, prompt: str, system: str = "") -> str:
-        """Kullanıcı mesajını alıp asistan yanıtı döner."""
+    async def generate(self, prompt: str, system: str = "", format: str | None = None) -> str:
+        """Kullanıcı mesajını alıp asistan yanıtı döner.
+
+        format="json" verildiğinde çıktı dilbilgisi seviyesinde geçerli JSON'a
+        zorlanır. Küçük modeller "JSON döndür" talimatını yok sayıp düz metin
+        veya prompt'un kendisini geri yansıtabiliyor; bu parametre o riski
+        modelden bağımsız olarak ortadan kaldırır.
+        """
         ...
 
 
@@ -29,23 +35,26 @@ class OllamaProvider(BaseLLMProvider):
         self._client = httpx.AsyncClient(base_url=settings.OLLAMA_BASE_URL, timeout=300.0)
         self._model = settings.OLLAMA_MODEL
 
-    async def generate(self, prompt: str, system: str = "") -> str:
+    async def generate(self, prompt: str, system: str = "", format: str | None = None) -> str:
         messages = []
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
 
-        response = await self._client.post(
-            "/api/chat",
-            json={
-                "model": self._model,
-                "messages": messages,
-                "stream": False,
-                # Resmi e-posta yanıtı — yaratıcılık yerine tutarlılık istiyoruz.
-                # Düşük temperature halüsinasyon ve off-topic sapmayı azaltır.
-                "options": {"temperature": 0.2, "top_p": 0.9},
-            },
-        )
+        payload: dict = {
+            "model": self._model,
+            "messages": messages,
+            "stream": False,
+            # Resmi e-posta yanıtı — yaratıcılık yerine tutarlılık istiyoruz.
+            # Düşük temperature halüsinasyon ve off-topic sapmayı azaltır.
+            "options": {"temperature": 0.2, "top_p": 0.9},
+        }
+        if format:
+            # Ollama çıktıyı grammar ile kısıtlar — model ne üretmek isterse
+            # istesin sonuç parse edilebilir JSON olur.
+            payload["format"] = format
+
+        response = await self._client.post("/api/chat", json=payload)
         response.raise_for_status()
         data = response.json()
         return data["message"]["content"]
@@ -86,7 +95,7 @@ class LlamaCppProvider(BaseLLMProvider):
             verbose=False,
         )
 
-    async def generate(self, prompt: str, system: str = "") -> str:
+    async def generate(self, prompt: str, system: str = "", format: str | None = None) -> str:
         import asyncio
 
         # llama-cpp-python senkron API — thread pool'da çalıştır
@@ -95,10 +104,14 @@ class LlamaCppProvider(BaseLLMProvider):
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
 
+        kwargs: dict = {"messages": messages}
+        if format == "json":
+            kwargs["response_format"] = {"type": "json_object"}
+
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
             None,
-            lambda: self._llm.create_chat_completion(messages=messages),
+            lambda: self._llm.create_chat_completion(**kwargs),
         )
         return response["choices"][0]["message"]["content"]
 

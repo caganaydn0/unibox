@@ -30,11 +30,45 @@ class Settings(BaseSettings):
     LLAMA_CPP_N_GPU_LAYERS: int = 0
 
     # Embedding (RAG)
-    EMBEDDING_MODEL: str = "nomic-embed-text"
-    EMBEDDING_DIMENSIONS: int = 768
+    # bge-m3: çok dilli embedding modeli. nomic-embed-text ağırlıklı İngilizce
+    # eğitildiği için Türkçe sorularda zayıf kalıyordu.
+    # Model veya boyut değiştirilirse: yeni bir Alembic migration ile
+    # document_chunks.embedding kolonu güncellenmeli, ardından
+    # scripts/reindex_documents.py çalıştırılmalı.
+    EMBEDDING_MODEL: str = "bge-m3"
+    EMBEDDING_DIMENSIONS: int = 1024
+    # 150 kelimelik chunk denendi ve ÖLÇÜMLE ELENDİ: büyük bir PDF 20 yerine
+    # 74 chunk'a bölününce aday havuzunu doldurup tek chunk'lık kısa
+    # dokümanları dışarı itti (recall@3 %70 -> %50). Doküman başına chunk
+    # sayısındaki dengesizlik, chunk uzunluğundaki dengesizlikten daha zararlı.
+    # Değiştirirseniz sonrasında: scripts/reindex_documents.py
     RAG_CHUNK_SIZE: int = 500        # kelime başına chunk
     RAG_CHUNK_OVERLAP: int = 50      # kelime örtüşmesi
     RAG_TOP_K: int = 7               # benzerlik araması sonuç sayısı
+
+    # Kapsam dışı soru eşiği (kosinüs mesafesi). En yakın chunk bu değerden
+    # uzaksa soru bilgi tabanının kapsamı dışında sayılır ve LLM'e HİÇ bağlam
+    # verilmez — böylece eline tutuşturulan alakasız metinden cevap uydurmaz.
+    #
+    # Kalibrasyon (81 kapsam içi soru: intent_test + kısa doküman + yönetmelik,
+    # 5 kapsam dışı soru). Dağılımlar örtüşüyor, kusursuz ayrım yok:
+    #   eşik   kapsam içi kayıp   kapsam dışı yakalanan
+    #   0.47              7%                    80%
+    #   0.50              1%                    40%   <-- seçilen
+    #   0.55              0%                    20%
+    #
+    # Asıl savunma hattı eşik DEĞİL, prompt. Ölçüldü: eşik tamamen devre dışı
+    # bırakıldığında bile, "bağlam ilgisizse uydurma" kuralı sayesinde 6 kapsam
+    # dışı sorunun 6'sı doğru şekilde öğrenci işlerine yönlendirildi (düzeltme
+    # öncesi model otopark ücretini "aylık 150 TL" diye uydurmuştu).
+    #
+    # Denenen eşikler ve geri getirimde yarattığı kayıp (etiketli intent, recall@7):
+    #   0.47 -> %82  (çok agresif, meşru soruların altıda birini reddetti)
+    #   0.50 -> %89
+    #   0.60 -> %97  (ölçülen kayıp yok)
+    # Bu yüzden eşik yalnızca uç durumlar için emniyet ağı olarak, maliyetinin
+    # sıfır olduğu noktada tutuluyor.
+    RAG_MAX_DISTANCE: float = 0.60
 
     # SMTP
     SMTP_BACKEND: str = "console"    # "console" | "smtp"

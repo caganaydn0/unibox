@@ -66,6 +66,7 @@ async def detect_intent(message: str) -> IntentResult:
         raw = await llm().generate(
             prompt=f"Öğrenci mesajı: {message}",
             system=CLASSIFIER_SYSTEM,
+            format="json",
         )
         # JSON çıktısını parse et
         # LLM bazen markdown kod bloğu veya açıklayıcı metin ekler — temizle
