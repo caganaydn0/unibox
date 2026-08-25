@@ -64,9 +64,16 @@ KURALLAR:
 1. Yanıtı Türkçe yaz, resmi ve nazik bir dil kullan.
 2. Sana verilen TÜM mevzuat maddelerini dikkatlice tara ve soruyla bağlantılı kısımları bul.
 3. Bulduğun maddeleri aktarırken hangi yönetmelikten geldiğini belirt (örn: "Transkript Yönetmeliği Madde 5'e göre..."). Kaynak adını [Kaynak N — belge_adı] etiketinden çıkar; öğrenciye `[Kaynak N]`, `dosya.pdf` gibi teknik etiket veya dosya uzantısı GÖSTERME.
-4. Mevzuatta ilgili bilgi varsa MUTLAKA onu kullan: yanıtta EN AZ BİR KEZ "[Yönetmelik adı] Madde N uyarınca..." formatında spesifik atıf yap. Genel yönlendirme yapma.
-5. RAG bağlamında BULUNMAYAN prosedür adımlarını (sistem menü adları, buton etiketleri, bilinmeyen online portal adımları vb.) ASLA uydurma.
-6. Tüm mevzuatı taradıktan sonra soruya net bir cevap bulunamadıysa veya konu mevzuatın kapsamı dışındaysa şunu yaz: "Daha detaylı bilgi için öğrenci işlerine danışınız."
+4. Mevzuatta ilgili bilgi varsa MUTLAKA onu kullan ve somut olarak aktar. Genel yönlendirme yapma.
+   Madde numarası atıfını YALNIZCA sana verilen metinde gerçekten "MADDE N" ibaresi geçiyorsa yap.
+   Metinde madde numarası yoksa belge adıyla atıf yap ("Transkript Belgesi Rehberi'ne göre...").
+   ASLA madde numarası UYDURMA.
+5. RAG bağlamında BULUNMAYAN hiçbir bilgiyi yazma: ücret, tutar, tarih, süre, kontenjan,
+   telefon, prosedür adımı, sistem menüsü. Bu tür bir bilgi sorulmuş ama metinde yoksa
+   uydurmak yerine 6. kuraldaki cümleyi yaz.
+6. Sana hiç mevzuat verilmediyse, verilen metin soruyla ilgisizse veya soruya net bir cevap
+   bulunamadıysa SADECE şunu yaz: "Daha detaylı bilgi için öğrenci işlerine danışınız."
+   Bu durumda tahmin yürütme, olasılık belirtme, örnek değer verme.
 7. Kişisel bilgi (TCKN, öğrenci numarası) isteme veya paylaşma.
 8. Yanıtı JSON olarak döndür: {{"subject": "Re: ...", "body": "..."}}
 9. body selamlaması: Öğrencinin adı verilmişse DOĞRUDAN o isimle başla (örn: "Sayın Ahmet Yılmaz,"). İsim yoksa "Sayın Öğrenci," yaz. ASLA "[isim]", "[İsim]", "[ad]" gibi köşeli parantezli yer tutucular veya {{name}} gibi şablon değişkenleri kullanma.
@@ -77,7 +84,9 @@ KURALLAR:
 İLGİLİ MEVZUAT:
 {rag_context}
 
-ÖNEMLİ: Mevzuat bilgisi varsa öğrenciyi başka yere yönlendirmek yerine o bilgiyi kullan ve açıkla. Mevzuatta net cevap yoksa "Daha detaylı bilgi için öğrenci işlerine danışınız." yaz."""
+ÖNEMLİ: Mevzuat bilgisi varsa öğrenciyi başka yere yönlendirmek yerine o bilgiyi kullan ve açıkla.
+Yukarıdaki "İLGİLİ MEVZUAT" bölümü BOŞ ise veya soruyla ilgisizse, hiçbir şey uydurma —
+yalnızca "Daha detaylı bilgi için öğrenci işlerine danışınız." yaz."""
 
 
 _PLACEHOLDER_NAME_PATTERNS = [
@@ -123,6 +132,10 @@ def _sanitize_reply_body(body: str, sender_name: str | None) -> str:
 
     # 1. JSON kaçağı — body başında veya sonunda JSON anahtarı fragmanı
     text = re.sub(r'^\s*\{\s*"subject"\s*:\s*"[^"]*"\s*,\s*"body"\s*:\s*"?', "", text)
+    # Model bazen gövdeyi rastgele bir anahtarın altına sarıyor
+    # (ölçüldü: '{ "Sayın Test Öğrenci,": "Bu yılki taban puanı ...').
+    # Baştaki { ve ilk "anahtar": kalıbını kırp.
+    text = re.sub(r'^\s*\{\s*"[^"]{1,80}"\s*:\s*"?', "", text)
     text = re.sub(r'"\s*\}\s*$', "", text.rstrip())
 
     # 2a. Teknik kaynak etiketleri — "[Kaynak N — dosya.pdf]" / "[Kaynak N]"
@@ -312,7 +325,7 @@ class EmailAnalyzer:
 
 {email_body}"""
 
-        raw = await llm().generate(user_prompt, system=system)
+        raw = await llm().generate(user_prompt, system=system, format="json")
         logger.debug("LLM raw (len=%d, intent=%s): %s", len(raw), intent_type, raw[:2000])
 
         try:
@@ -337,7 +350,11 @@ class EmailAnalyzer:
             reply_data = json.loads(clean)
             subject = reply_data.get("subject", f"Re: {email_subject or 'Yanıt'}")
             body = reply_data.get("body", raw)
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "Yanıt JSON'u parse edilemedi (%s) — ham çıktı gövde olarak kullanılıyor. Ham: %.200s",
+                exc, raw,
+            )
             subject = f"Re: {email_subject or 'Yanıt'}"
             body = raw
 

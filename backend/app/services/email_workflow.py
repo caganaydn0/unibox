@@ -24,11 +24,15 @@ from app.core.ws_manager import ws_manager
 from app.db.models.email_draft import EmailDraft, EmailDraftStatus, VALID_TRANSITIONS
 from app.db.models.conversation import Conversation
 from app.db.models.request_intent import RequestIntent
-from app.services.anonymizer import mask_pii
+from app.services.anonymizer import mask_pii, sanitize_draft_body
 from app.services.llm_provider import llm
 from app.services.rag_engine import RagEngine
 
 logger = logging.getLogger(__name__)
+
+# Taslak üretiminde LLM'e verilecek RAG bağlamının üst sınırı (karakter).
+# Yerel donanımda uzun bağlam üretim süresini doğrusaldan hızlı büyütüyor.
+DRAFT_CONTEXT_MAX_CHARS = 2500
 
 # Bir öğrenciden toplanması gereken alanlar (intent tipine göre)
 REQUIRED_FIELDS: dict[str, list[str]] = {
@@ -236,19 +240,47 @@ async def _handle_collecting(
             "draft_id": draft.id,
         }
 
-    # LLM'den bilgi çıkar ve güncelle
-    extract_system = f"""Öğrenci mesajından aşağıdaki alanları çıkar ve JSON döndür.
-Sadece mevcut mesajda olan alanları ekle. Yoksa boş dict döndür.
-Alanlar: {required}
-Örnek: {{"academic_year": "2024-2025", "semester": "bahar"}}"""
+    # LLM'den bilgi çıkar ve güncelle.
+    #
+    # Yalnızca HENÜZ TOPLANMAMIŞ alanları soruyoruz. Sebep: küçük modeller
+    # aradıkları bilgiyi mesajda bulamayınca prompt'taki örneği birebir
+    # kopyalıyor. Örnekte somut değer bulunursa ("semester": "bahar") bu değer
+    # doğru toplanmış veriyi eziyordu. Bu yüzden hem somut örnek vermiyoruz,
+    # hem de aşağıda yalnızca eksik alanları kabul ediyoruz.
+    henüz_eksik = [f for f in required if f not in collected]
+    extract_system = f"""Öğrenci mesajından bilgi çıkar ve JSON döndür.
 
-    raw_extract = await llm().generate(user_message, system=extract_system)
+Çıkarılacak alanlar: {", ".join(henüz_eksik)}
+
+Kurallar:
+- Yalnızca yukarıdaki alan adlarını anahtar olarak kullan.
+- Bir alan öğrencinin mesajında geçmiyorsa o anahtarı hiç ekleme.
+- Hiçbir alan bulamazsan boş JSON nesnesi döndür.
+- Örnek değer uydurma; sadece mesajda geçen bilgiyi yaz."""
+
+    raw_extract = await llm().generate(user_message, system=extract_system, format="json")
     try:
         clean = raw_extract.strip().strip("```json").strip("```")
         extracted = json.loads(clean)
-        collected.update(extracted)
-    except Exception:
-        pass  # Parse hatası — mevcut toplananları koru
+        if not isinstance(extracted, dict):
+            raise ValueError(f"dict bekleniyordu, {type(extracted).__name__} geldi")
+
+        # Sadece eksik alanları kabul et. Zaten toplanmış bir alanı asla
+        # ezmeyiz — model örnek kopyaladığında doğru veri bozulmasın.
+        kabul = {k: v for k, v in extracted.items() if k in henüz_eksik and v}
+        reddedilen = set(extracted) - set(kabul)
+        if reddedilen:
+            logger.info(
+                "Draft %s: yok sayılan anahtarlar %s (eksik alanlar: %s)",
+                draft.id, reddedilen, henüz_eksik,
+            )
+        collected.update(kabul)
+    except Exception as exc:
+        # Sessizce yutmak akışı görünmez şekilde kilitliyordu — en azından logla.
+        logger.warning(
+            "Draft %s: alan çıkarma başarısız (%s). Ham çıktı: %.200s",
+            draft.id, exc, raw_extract,
+        )
 
     # Güncelle
     draft.collected_fields_enc = _encrypt_fields(collected)
@@ -269,30 +301,61 @@ async def _generate_draft(
     session: AsyncSession, draft: EmailDraft, collected: dict
 ) -> dict[str, Any]:
     """Toplanan alanlardan e-posta taslağı oluştur."""
-    # RAG ile şablon çek
+    # RAG ile şablon çek.
+    # Sorguyu intent'in Türkçe karşılığıyla kuruyoruz: "transcript_request"
+    # gibi İngilizce anahtar Türkçe bir bilgi tabanında zayıf eşleşme veriyor.
+    from app.services.intent_detector import INTENT_DESCRIPTIONS
+
+    konu = INTENT_DESCRIPTIONS.get(draft.intent_type, draft.intent_type)
     rag = RagEngine()
-    rag_context = await rag.query(
-        f"{draft.intent_type} e-postası nasıl yazılır",
-        draft.intent_type,
-    )
+    rag_context = await rag.query(konu, draft.intent_type)
+
+    # Bağlamı sınırla. Ölçüm: sınırsız bağlam ~11.000 karaktere ulaşıyor ve
+    # 4 GB VRAM'e tam sığmayan bir modelde taslak üretimi 300 sn'lik istemci
+    # zaman aşımını aşıyordu. İlk chunk'lar en alakalı olanlar (cosine sırası),
+    # kuyruktakiler hem yavaşlatıyor hem konuyu dağıtıyor.
+    if len(rag_context) > DRAFT_CONTEXT_MAX_CHARS:
+        rag_context = rag_context[:DRAFT_CONTEXT_MAX_CHARS] + "\n[...]"
+        logger.info("Draft %s: RAG bağlamı %d karaktere kırpıldı.",
+                    draft.id, DRAFT_CONTEXT_MAX_CHARS)
 
     draft_system = f"""Sen bir üniversite asistanısın. Aşağıdaki bilgilerle resmi bir e-posta taslağı oluştur.
+E-posta, öğrencinin "{konu}" talebini ilgili birime ileten resmi bir başvuru yazısıdır.
 Konu satırı ve e-posta gövdesi ayrı ayrı JSON olarak döndür.
 Format: {{"subject": "...", "body": "..."}}
 
 Toplanan bilgiler: {json.dumps(collected, ensure_ascii=False)}
 İlgili yönetmelik bilgisi: {rag_context}
-Kişisel bilgi (TCKN, ad-soyad) e-postaya dahil ETME."""
 
-    raw = await llm().generate("E-posta taslağı oluştur", system=draft_system)
+ZORUNLU KURALLAR:
+- Yalnızca yukarıdaki "Toplanan bilgiler"i kullan. Başka bilgi İSTEME.
+- TCKN, öğrenci numarası, ad-soyad, doğum tarihi YAZMA ve TALEP ETME.
+- Köşeli parantezli yer tutucu ([Adınız] gibi) KULLANMA; bilgi eksikse o cümleyi hiç yazma.
+- Aynı cümleyi tekrarlama."""
+
+    raw = await llm().generate("E-posta taslağı oluştur", system=draft_system, format="json")
     try:
         clean = raw.strip().strip("```json").strip("```")
         draft_data = json.loads(clean)
         subject = draft_data.get("subject", f"{draft.intent_type} Talebi")
         body = draft_data.get("body", raw)
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "Draft %s: taslak JSON'u parse edilemedi (%s) — ham çıktı gövde olarak kullanılıyor.",
+            draft.id, exc,
+        )
         subject = f"{draft.intent_type.replace('_', ' ').title()} Talebi"
         body = raw
+
+    # KVKK güvenlik ağı: prompt'taki yasağa rağmen model TCKN / ad-soyad
+    # isteyen satırlar üretebiliyor. Prompt'a güvenmiyoruz, çıktıyı da
+    # deterministik olarak temizliyoruz.
+    temiz_body = sanitize_draft_body(body)
+    if temiz_body != body:
+        logger.info("Draft %s: gövde temizlendi (%d -> %d karakter).",
+                    draft.id, len(body), len(temiz_body))
+    body = temiz_body
+    subject = sanitize_draft_body(subject).replace("\n", " ").strip()
 
     # Taslağa yaz
     draft.subject = subject
