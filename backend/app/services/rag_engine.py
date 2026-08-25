@@ -107,14 +107,33 @@ class RagEngine:
     # Embedding
     # ------------------------------------------------------------------ #
     async def embed_text(self, text: str) -> list[float]:
-        """Ollama /api/embeddings endpoint'i ile metin → vektör."""
+        """Ollama /api/embeddings endpoint'i ile metin → vektör.
+
+        Not: bge-m3 asimetrik önek ("query: " / "passage: ") İSTEMEZ —
+        E5 ve bge-v1.5 ailelerinden farklı olarak sorgu ile doküman aynı
+        şekilde gömülür. Eklemeyin.
+        """
         async with httpx.AsyncClient(base_url=self._ollama_url, timeout=60.0) as client:
             resp = await client.post(
                 "/api/embeddings",
                 json={"model": self._embedding_model, "prompt": text},
             )
             resp.raise_for_status()
-            return resp.json()["embedding"]
+            vektör = resp.json().get("embedding") or []
+
+        # Boyut doğrulaması. Olmadığında iki hata sınıfı, teşhisi zor
+        # pgvector mesajlarına dönüşüyordu:
+        #  - boş metin -> [] -> "vector must have at least 1 dimension"
+        #  - yanlış model (ör. nomic-embed-text hâlâ yüklü) -> 768 boyut ->
+        #    "expected 1024 dimensions, not 768"
+        if len(vektör) != settings.EMBEDDING_DIMENSIONS:
+            raise ValueError(
+                f"Embedding boyutu beklenenden farklı: {len(vektör)} != "
+                f"{settings.EMBEDDING_DIMENSIONS}. Model '{self._embedding_model}' "
+                f"yüklü mü ve EMBEDDING_DIMENSIONS doğru mu? Model değiştiyse "
+                f"migration + scripts/reindex_documents.py gerekir."
+            )
+        return vektör
 
     # ------------------------------------------------------------------ #
     # Metin çıkarma & parçalama
@@ -229,6 +248,13 @@ class RagEngine:
         arama yakalar, anlamsal yakınlığı ise vektör araması taşır.
         """
         k = top_k or settings.RAG_TOP_K
+
+        # Boş/yalnızca boşluk sorgu: Ollama boş vektör döndürüyor ve pgvector
+        # "vector must have at least 1 dimension" ile reddediyor. Sohbet
+        # ucunda mesaj uzunluğu doğrulanmadığı için bu erişilebilir bir
+        # 500'dü. Aramanın anlamı da yok — erken çık.
+        if not question or not question.strip():
+            return []
 
         görünür = (
             KnowledgeDocument.deleted_at.is_(None),

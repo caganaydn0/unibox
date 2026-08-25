@@ -1,0 +1,38 @@
+{
+  "ad": "rehber_dokuman",
+  "korpus_damgası": "c2c44b755835f077",
+  "metrikler": {
+    "recall@1": 0.68,
+    "recall@3": 0.76,
+    "recall@7": 1.0,
+    "mrr": 0.76,
+    "n": 25
+  },
+  "konumlar": {
+    "Derslerimin ve notlarımın hepsini gösteren belgeyi nasıl alırım?": 0,
+    "Aldığım not yanlış değerlendirilmiş olabilir, ne yapabilirim?": 0,
+    "Bir süre okula ara vermek istiyorum, nasıl başvururum?": 1,
+    "Bankaya vermek için okuduğumu kanıtlayan bir kağıt lazım": 5,
+    "Bir hocanın davranışından rahatsızım, nereye başvurmalıyım?": 5,
+    "Güz dönemi ne zaman başlıyor?": 0,
+    "Aynı anda iki bölüm okumak istiyorum, şartları neler?": 0,
+    "Bu dönemin ödemesini ne zaman yapmam gerekiyor?": 2,
+    "Kendimi çok kötü hissediyorum, üniversitede destek alabileceğim bir yer var mı?": 0,
+    "Finalden kaldım, bir hakkım daha var mı?": 0,
+    "Başka bir üniversiteden buraya geçmek istiyorum": 0,
+    "Ön lisans mezunuyum, lisansa devam edebilir miyim?": 0,
+    "Önceki okulumda aldığım dersler için tekrar derse girmek istemiyorum": 3,
+    "Okulu bitirmek için neleri tamamlamış olmam gerekiyor?": 5,
+    "Ortalamam yüksek, bunun için bir belge veriliyor mu?": 0,
+    "Mezun olmama sadece bir ders kaldı, ne yapabilirim?": 0,
+    "Zorunlu uygulama için kaç gün çalışmam gerekiyor, sigortam yapılıyor mu?": 0,
+    "Bir dönem yurt dışında okumak istiyorum, başvurular ne zaman?": 0,
+    "Temmuz ağustos döneminde ders alabilir miyim?": 0,
+    "Kurallara aykırı davranan öğrenciye hangi cezalar veriliyor?": 0,
+    "Yeni dönem için hangi dersleri seçeceğimi nasıl belirlerim?": 0,
+    "Ortalamam nasıl hesaplanıyor?": 3,
+    "Notlarımı ve belgelerimi hangi sistemden görebilirim?": 0,
+    "Yurt dışından geldim, kayıt için hangi evraklar isteniyor?": 5,
+    "Kitap ödünç alma süresi ne kadar, yurtta kalabilir miyim?": 0
+  }
+}
