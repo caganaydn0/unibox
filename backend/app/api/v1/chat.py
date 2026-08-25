@@ -11,12 +11,15 @@ import re
 import secrets
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPException
+from fastapi import (
+    APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect,
+)
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.core.ratelimit import CHAT_LIMIT, SESSION_LIMIT, limiter
 from app.core.ws_manager import ws_manager
 from app.db.models.conversation import Conversation
 from app.db.session import AsyncSessionLocal
@@ -136,7 +139,10 @@ class SessionResponse(BaseModel):
 
 
 @router.post("/session", response_model=SessionResponse, status_code=201)
-async def create_session(db: AsyncSession = Depends(get_db)) -> SessionResponse:
+@limiter.limit(SESSION_LIMIT)
+async def create_session(
+    request: Request, db: AsyncSession = Depends(get_db)
+) -> SessionResponse:
     """Yeni öğrenci sohbet oturumu açar ve jetonu BİR KEZ döner.
 
     Jeton kriptografik olarak güvenli üretilir (secrets.token_urlsafe).
@@ -299,7 +305,8 @@ class MessageRequest(BaseModel):
 
 
 @router.post("/message")
-async def send_message(req: MessageRequest):
+@limiter.limit(CHAT_LIMIT)
+async def send_message(req: MessageRequest, request: Request):
     """REST fallback — WebSocket kullanamayan istemciler için."""
     içerik = req.content.strip()
     if not içerik:

@@ -3,9 +3,11 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi.errors import RateLimitExceeded
 
 from app.config import settings
 from app.core.events import lifespan
+from app.core.ratelimit import limiter, rate_limit_handler
 
 logging.basicConfig(
     level=logging.DEBUG if settings.APP_ENV == "development" else logging.INFO,
@@ -35,6 +37,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Hız sınırlama — kaba kuvvet ve LLM kaynak tüketimine karşı
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
 
 # Router'ları kayıt et
 from app.api.v1.router import router as v1_router  # noqa: E402

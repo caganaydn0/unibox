@@ -16,7 +16,8 @@ GEÇERLİ = {
     "APP_ENV": "production",
     "SECRET_KEY": "x" * 48,
     "FERNET_KEY": "3n8Zk7Yl0pQrStUvWxYz1234567890AbCdEfGhIjKlM=",
-    "ADMIN_PASSWORD": "gerçekten-güçlü-bir-parola",
+    # Üretimde düz metin parola kabul edilmiyor; bcrypt özeti şart
+    "ADMIN_PASSWORD_HASH": "$2b$12$" + "a" * 53,
     "SMTP_BACKEND": "smtp",
 }
 
@@ -37,13 +38,19 @@ def test_gecerli_uretim_yapilandirmasi_kabul_edilir() -> None:
         ("SECRET_KEY", "CHANGE_ME_IN_PRODUCTION"),
         ("SECRET_KEY", "CHANGE_ME_RANDOM_32_CHARS"),
         ("FERNET_KEY", "CHANGE_ME_FERNET_KEY"),
-        ("ADMIN_PASSWORD", "CHANGE_ME"),
     ],
 )
 def test_sablon_degerler_uretimde_reddedilir(alan: str, değer: str) -> None:
     with pytest.raises(ValueError) as hata:
         _ayarlar(**{alan: değer})
     assert alan in str(hata.value)
+
+
+def test_uretimde_duz_metin_parola_reddedilir() -> None:
+    """Düz metin parola ortam değişkeninde durursa süreç listesinden,
+    çekirdek dökümünden ve yedeklerden okunabilir."""
+    with pytest.raises(ValueError, match="ADMIN_PASSWORD_HASH"):
+        _ayarlar(ADMIN_PASSWORD_HASH="", ADMIN_PASSWORD="düz-metin-parola")
 
 
 def test_kisa_secret_key_reddedilir() -> None:

@@ -31,7 +31,19 @@ class Settings(BaseSettings):
     APP_ENV: str = "development"
     SECRET_KEY: str = "CHANGE_ME_IN_PRODUCTION"
     ADMIN_USERNAME: str = "admin"
+
+    # Admin parolası — İKİ BİÇİM desteklenir:
+    #
+    #   ADMIN_PASSWORD_HASH : bcrypt özeti (ÖNERİLEN, üretimde ZORUNLU)
+    #   ADMIN_PASSWORD      : düz metin (yalnızca geliştirme kolaylığı)
+    #
+    # Hash üretmek için:
+    #   cd backend && uv run python -c \
+    #     "from app.core.security import hash_password; print(hash_password('parolanız'))"
+    #
+    # Hash tanımlıysa düz metin YOK SAYILIR.
     ADMIN_PASSWORD: str = "CHANGE_ME"
+    ADMIN_PASSWORD_HASH: str = ""
 
     # Veritabanı (PostgreSQL + pgvector)
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/unibox"
@@ -155,9 +167,20 @@ class Settings(BaseSettings):
             return self
 
         sorunlar: list[str] = []
-        for ad in ("SECRET_KEY", "FERNET_KEY", "ADMIN_PASSWORD"):
+        for ad in ("SECRET_KEY", "FERNET_KEY"):
             if getattr(self, ad) in _GUVENSIZ_VARSAYILANLAR:
                 sorunlar.append(f"{ad} hâlâ şablon değerinde")
+
+        # Parola: üretimde bcrypt özeti zorunlu. Düz metin parola ortam
+        # değişkeninde durursa süreç listesinden, çekirdek dökümünden ve
+        # yedeklerden okunabilir.
+        if not self.ADMIN_PASSWORD_HASH:
+            sorunlar.append(
+                "ADMIN_PASSWORD_HASH tanımlı değil — üretimde düz metin parola "
+                "kullanılamaz. Üretmek için: uv run python -c "
+                "\"from app.core.security import hash_password; "
+                "print(hash_password('parolanız'))\""
+            )
         if len(self.SECRET_KEY) < 32:
             sorunlar.append("SECRET_KEY en az 32 karakter olmalı")
         if self.SMTP_BACKEND == "console":
