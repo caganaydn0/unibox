@@ -27,6 +27,7 @@ from app.db.models.request_intent import RequestIntent
 from app.services.anonymizer import mask_pii, sanitize_draft_body
 from app.services.llm_provider import llm
 from app.services.rag_engine import RagEngine
+from app.services.rag_query import build_query
 
 logger = logging.getLogger(__name__)
 
@@ -157,7 +158,9 @@ async def handle_message(
         if not requires_email:
             # Genel soru — RAG ile yanıtla
             rag = RagEngine()
-            rag_context = await rag.query(user_message, intent_type)
+            rag_context = await rag.query_spec(
+                build_query(raw_text=user_message, intent_type=intent_type)
+            )
             system = SYSTEM_PROMPTS["general"]
             if rag_context:
                 system += f"\n\nİlgili bilgi:\n{rag_context}"
@@ -308,16 +311,32 @@ async def _generate_draft(
 
     konu = INTENT_DESCRIPTIONS.get(draft.intent_type, draft.intent_type)
     rag = RagEngine()
-    rag_context = await rag.query(konu, draft.intent_type)
+    # Sorgu YALNIZCA intent'in Türkçe karşılığı olamaz: o 6 sabit dizeden
+    # biri olduğu için her transkript talebi HEP AYNI chunk'ları getiriyordu.
+    # Öğrencinin verdiği somut bilgiler (dönem, ders, dil) sorguya girmeli.
+    #
+    # KVKK: collected çözülmüş alanları içeriyor. LLM'e zaten gidiyor ve her
+    # şey kurum içinde, ama sorgu ham hâliyle INFO seviyesinde LOGLANMAMALI.
+    toplanan_metin = " ".join(str(d) for d in collected.values() if d)
+    rag_context = await rag.query_spec(
+        build_query(
+            raw_text=toplanan_metin or konu,
+            subject=konu,
+            intent_type=draft.intent_type,
+        ),
+        azami_karakter=DRAFT_CONTEXT_MAX_CHARS,
+    )
 
-    # Bağlamı sınırla. Ölçüm: sınırsız bağlam ~11.000 karaktere ulaşıyor ve
-    # 4 GB VRAM'e tam sığmayan bir modelde taslak üretimi 300 sn'lik istemci
-    # zaman aşımını aşıyordu. İlk chunk'lar en alakalı olanlar (cosine sırası),
-    # kuyruktakiler hem yavaşlatıyor hem konuyu dağıtıyor.
-    if len(rag_context) > DRAFT_CONTEXT_MAX_CHARS:
-        rag_context = rag_context[:DRAFT_CONTEXT_MAX_CHARS] + "\n[...]"
-        logger.info("Draft %s: RAG bağlamı %d karaktere kırpıldı.",
-                    draft.id, DRAFT_CONTEXT_MAX_CHARS)
+    # NOT: Bağlam sınırı artık YUKARIDA, query_spec(azami_karakter=...) ile
+    # uygulanıyor — chunk BÜTÜNLÜĞÜ korunarak. Eskiden burada
+    # `rag_context[:2500]` vardı ve son maddeyi cümle ortasından kesip modele
+    # yarım hüküm veriyordu. Belge sırasına dizmeden sonra "baştaki chunk en
+    # alakalı" varsayımı da geçersizleştiği için körlemesine kesmek büsbütün
+    # yanlış hâle geldi.
+    #
+    # Sınırın sebebi değişmedi: ölçüm sırasında sınırsız bağlam ~11.000
+    # karaktere ulaşıyor ve 4 GB VRAM'e tam sığmayan bir modelde taslak
+    # üretimi 300 sn'lik istemci zaman aşımını aşıyordu.
 
     draft_system = f"""Sen bir üniversite asistanısın. Aşağıdaki bilgilerle resmi bir e-posta taslağı oluştur.
 E-posta, öğrencinin "{konu}" talebini ilgili birime ileten resmi bir başvuru yazısıdır.

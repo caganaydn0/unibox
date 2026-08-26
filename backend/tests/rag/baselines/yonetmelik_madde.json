@@ -1,6 +1,6 @@
 {
   "ad": "yonetmelik_madde",
-  "korpus_damgası": "9d87321ca49a210d",
+  "korpus_damgası": "37589fdecaf64c64",
   "metrikler": {
     "recall@1": 0.4182,
     "recall@3": 0.6909,

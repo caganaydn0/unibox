@@ -20,6 +20,7 @@ from app.services import system_settings_service
 from app.services.intent_detector import detect_intent
 from app.services.llm_provider import llm
 from app.services.rag_engine import RagEngine
+from app.services.rag_query import build_query
 
 logger = logging.getLogger(__name__)
 
@@ -232,9 +233,30 @@ class EmailAnalyzer:
                 ie.intent_type = intent_result.intent_type
                 ie.intent_confidence = intent_result.confidence
 
-                # 2. RAG — tüm belgeleri tara (tag filtresi yok)
-                query_text = f"{ie.subject or ''} {email_content}"
-                rag_context = await self._rag.query(query_text, None)
+                # 2. RAG
+                #
+                # Eskiden sorgu `f"{subject} {body}"` idi ve intent=None
+                # geçiliyordu. İki sorun vardı:
+                #
+                #  a) Selamlama, imza ve alıntılanmış thread dahil TÜM gövde
+                #     embedding'e giriyordu. Uzun bir e-postanın vektörü çok
+                #     konulu bir ağırlık merkezine dönüşüp hiçbir şeye iyi
+                #     eşleşmiyordu. Aynı metin tam metin aramasına da gidiyor,
+                #     yüzlerce lexeme OR'lanınca ts_rank gürültüye dönüşüyordu.
+                #
+                #  b) intent=None: ":235'teki eski yorum intent'in FİLTRE
+                #     olduğu dönemden kalma. Artık bonus semantiği var ve
+                #     None geçmek sıralama sinyalini çöpe atmak demek.
+                #     Güvene bağlı geçiriyoruz: LLM sınıflandırıcısı
+                #     yanılabilir ve yanlış intent etiketli chunk'ları
+                #     haksız yere öne çeker.
+                spec = build_query(
+                    raw_text=email_content,
+                    subject=ie.subject,
+                    intent_type=ie.intent_type,
+                    intent_confidence=ie.intent_confidence,
+                )
+                rag_context = await self._rag.query_spec(spec)
                 rag_source_count = rag_context.count("[Kaynak") if rag_context else 0
                 ie.rag_context_preview = (rag_context[:1000] + "...") if rag_context and len(rag_context) > 1000 else rag_context
                 ie.rag_source_count = rag_source_count

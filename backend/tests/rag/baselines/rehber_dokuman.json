@@ -1,11 +1,11 @@
 {
   "ad": "rehber_dokuman",
-  "korpus_damgası": "9d87321ca49a210d",
+  "korpus_damgası": "37589fdecaf64c64",
   "metrikler": {
     "recall@1": 0.6,
     "recall@3": 0.76,
     "recall@7": 0.96,
-    "mrr": 0.7093,
+    "mrr": 0.7113,
     "n": 25
   },
   "konumlar": {
@@ -32,7 +32,7 @@
     "Yeni dönem için hangi dersleri seçeceğimi nasıl belirlerim?": 0,
     "Ortalamam nasıl hesaplanıyor?": 5,
     "Notlarımı ve belgelerimi hangi sistemden görebilirim?": 0,
-    "Yurt dışından geldim, kayıt için hangi evraklar isteniyor?": 4,
+    "Yurt dışından geldim, kayıt için hangi evraklar isteniyor?": 3,
     "Kitap ödünç alma süresi ne kadar, yurtta kalabilir miyim?": 0
   }
 }

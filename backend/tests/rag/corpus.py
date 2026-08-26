@@ -145,8 +145,15 @@ def _fixture_damgası() -> str:
     from app.services.chunking import CHUNKER_SURUMU
 
     h = hashlib.sha256()
-    for yol in sorted(FIXTURES.rglob("*")):
-        if yol.is_file() and yol.suffix in {".pdf", ".jsonl"}:
+    # YALNIZCA korpusa GİREN dosyalar. queries/ altındaki soru setleri
+    # korpusun içeriğini etkilemiyor; damgaya dahil edilirse yeni bir soru
+    # eklemek 2 dakikalık gereksiz yeniden indekslemeye yol açıyor.
+    korpus_dosyaları = [
+        *sorted((FIXTURES / "mevzuat").glob("*.pdf")),
+        FIXTURES / "knowledge_base.jsonl",
+    ]
+    for yol in korpus_dosyaları:
+        if yol.is_file():
             h.update(yol.name.encode("utf-8"))
             h.update(yol.read_bytes())
     for ayar in (settings.EMBEDDING_MODEL, settings.EMBEDDING_DIMENSIONS,

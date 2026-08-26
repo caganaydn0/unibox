@@ -358,13 +358,32 @@ class RagEngine:
         %19). "Transkript" gibi birebir geçen anahtar kelimeleri sözcüksel
         arama yakalar, anlamsal yakınlığı ise vektör araması taşır.
         """
+        return await self.search_many([question], intent_type, top_k)
+
+    async def search_many(
+        self,
+        sorgular: list[str],
+        intent_type: str | None = None,
+        top_k: int | None = None,
+    ) -> list[tuple[str, str, list[str]]]:
+        """Birden fazla sorguyu tek bir sonuç listesinde birleştirir.
+
+        Kullanımı: e-postanın KONUSU ve GÖVDESİ ayrı sorgular olarak
+        verilir. Konu satırını gövdeye ekleyip tekrarlayarak ağırlık
+        vermektense, iki bağımsız arama çalıştırıp zaten var olan RRF ile
+        birleştirmek daha ilkeli — konu kısa ve öz olduğu için kendi başına
+        güçlü bir sinyal, gövdeye karıştırıldığında kayboluyor.
+
+        Kapı, füzyon ve çeşitlilik TEK KEZ, birleşik aday havuzuna uygulanır.
+        """
         k = top_k or settings.RAG_TOP_K
 
         # Boş/yalnızca boşluk sorgu: Ollama boş vektör döndürüyor ve pgvector
         # "vector must have at least 1 dimension" ile reddediyor. Sohbet
         # ucunda mesaj uzunluğu doğrulanmadığı için bu erişilebilir bir
         # 500'dü. Aramanın anlamı da yok — erken çık.
-        if not question or not question.strip():
+        temiz_sorgular = [s.strip() for s in sorgular if s and s.strip()]
+        if not temiz_sorgular:
             return []
 
         görünür = (
@@ -372,6 +391,55 @@ class RagEngine:
             KnowledgeDocument.status == ProcessingStatus.INDEXED,
         )
 
+        return self._sadelestir(
+            await self._ara_zengin(temiz_sorgular, intent_type, k)
+        )
+
+    @staticmethod
+    def _sadelestir(zengin: list[tuple]) -> list[tuple[str, str, list[str]]]:
+        """Zengin demetleri public (içerik, etiket, etiketler) biçimine indirger."""
+        return [(içerik, etiket, tags) for _, _, _, içerik, etiket, tags in zengin]
+
+    async def _ara_zengin(
+        self, sorgular: list[str], intent_type: str | None, top_k: int | None
+    ) -> list[tuple]:
+        """search_many ile aynı iş, ama doc_id/chunk_index'i de taşır.
+
+        Belge sırasına dizme bu bilgiye ihtiyaç duyuyor; public search()
+        imzasını kirletmemek için ayrı tutuluyor.
+        """
+        k = top_k or settings.RAG_TOP_K
+        temiz = [s.strip() for s in sorgular if s and s.strip()]
+        if not temiz:
+            return []
+
+        görünür = (
+            KnowledgeDocument.deleted_at.is_(None),
+            KnowledgeDocument.status == ProcessingStatus.INDEXED,
+        )
+        skorlar: dict[str, float] = {}
+        en_yakın: float | None = None
+        vektör_çalıştı = False
+        toplam_fts = 0
+
+        for soru in temiz:
+            v_ids, f_ids, mesafe, v_ok = await self._adaylari_getir(soru, görünür)
+            vektör_çalıştı = vektör_çalıştı or v_ok
+            toplam_fts += len(f_ids)
+            if mesafe is not None:
+                en_yakın = mesafe if en_yakın is None else min(en_yakın, mesafe)
+            for liste in (v_ids, f_ids):
+                for sıra, cid in enumerate(liste):
+                    skorlar[cid] = skorlar.get(cid, 0.0) + 1.0 / (RRF_K + sıra + 1)
+
+        return await self._siralayip_sec(
+            skorlar, en_yakın, vektör_çalıştı, toplam_fts, intent_type, k, temiz[0],
+        )
+
+    async def _adaylari_getir(
+        self, question: str, görünür: tuple
+    ) -> tuple[list[str], list[str], float | None, bool]:
+        """Tek sorgu için aday listeleri: (vektör, sözcüksel, en yakın mesafe, vektör çalıştı mı)."""
         # --- 1. Anlamsal arama ---
         #
         # Embedding çağrısı BİLİNÇLİ olarak oturum bloğunun DIŞINDA: eskiden
@@ -387,7 +455,7 @@ class RagEngine:
         vektör_çalıştı = False
         try:
             question_embedding = await self.embed_text(question)
-            async with AsyncSessionLocal() as session:
+            async with AsyncSessionLocal() as session:  # noqa: SIM117
                 mesafe = DocumentChunk.embedding.cosine_distance(question_embedding)
                 vek_stmt = (
                     select(DocumentChunk.id, mesafe.label("mesafe"))
@@ -431,6 +499,19 @@ class RagEngine:
                 "devam ediliyor.", exc_info=True,
             )
 
+        return vek_ids, fts_ids, en_yakın, vektör_çalıştı
+
+    async def _siralayip_sec(
+        self,
+        skorlar: dict[str, float],
+        en_yakın: float | None,
+        vektör_çalıştı: bool,
+        fts_isabet: int,
+        intent_type: str | None,
+        k: int,
+        günlük_metni: str,
+    ) -> list[tuple[str, str, list[str]]]:
+        """Birleşik aday havuzuna kapı, intent bonusu ve çeşitlilik uygular."""
         # --- Kapsam kontrolü (füzyondan SONRA, iki sinyale birden bakarak) ---
         #
         # Eskiden bu kontrol vektör aramasının hemen ardındaydı ve tek başına
@@ -449,22 +530,17 @@ class RagEngine:
         # kapsam dışı sorunun 6'sını doğru reddetti. Bu yüzden burada aşırı
         # mühendislik yapmıyoruz.
         uzak = en_yakın is None or en_yakın > settings.RAG_MAX_DISTANCE
-        if vektör_çalıştı and uzak and not fts_ids:
+        if vektör_çalıştı and uzak and not fts_isabet:
             logger.info(
                 "Kapsam dışı sayıldı (mesafe=%s > %s, sözcüksel isabet=0): %.80s",
                 f"{en_yakın:.3f}" if en_yakın is not None else "yok",
-                settings.RAG_MAX_DISTANCE, question,
+                settings.RAG_MAX_DISTANCE, günlük_metni,
             )
             return []
 
-        # --- 3. Reciprocal Rank Fusion ---
-        skorlar: dict[str, float] = {}
-        for liste in (vek_ids, fts_ids):
-            for sıra, cid in enumerate(liste):
-                skorlar[cid] = skorlar.get(cid, 0.0) + 1.0 / (RRF_K + sıra + 1)
-
         if not skorlar:
             return []
+        question = günlük_metni
 
         # --- 4. Adayların içeriğini çek ---
         async with AsyncSessionLocal() as session:
@@ -474,6 +550,7 @@ class RagEngine:
                     DocumentChunk.content,
                     DocumentChunk.tags_json,
                     DocumentChunk.document_id,
+                    DocumentChunk.chunk_index,
                     KnowledgeDocument.original_filename,
                     KnowledgeDocument.description,
                 )
@@ -486,7 +563,7 @@ class RagEngine:
         # öne çekiyoruz. Eskiden burada bir filtre vardı ama etiketsiz chunk'lar
         # her zaman dahil edildiği için pratikte hiçbir etkisi yoktu.
         sonuç = []
-        for cid, content, tags_json, doc_id, filename, description in satırlar:
+        for cid, content, tags_json, doc_id, sıra_no, filename, description in satırlar:
             try:
                 etiketler = json.loads(tags_json)
             except Exception:
@@ -494,7 +571,9 @@ class RagEngine:
             skor = skorlar[cid]
             if intent_type and intent_type in etiketler:
                 skor += INTENT_BONUS
-            sonuç.append((cid, skor, content, description or filename, etiketler, doc_id))
+            sonuç.append(
+                (cid, skor, content, description or filename, etiketler, doc_id, sıra_no)
+            )
 
         sonuç.sort(key=lambda r: r[1], reverse=True)
 
@@ -508,39 +587,117 @@ class RagEngine:
         # için en az 4 ayrı doküman gerekiyordu, konuyla eşleşen 2 doküman
         # varsa en fazla 4 chunk dönüyordu ve hiçbir uyarı yoktu.
         seçilen_id: set[str] = set()
-        seçilen: list[tuple[str, str, list[str]]] = []
+        seçilen: list[tuple] = []   # (skor, doc_id, chunk_index, content, etiket, tags)
         doküman_sayacı: collections.Counter[str] = collections.Counter()
 
-        for cid, _, content, etiket, tags, doc_id in sonuç:
+        for cid, skor, content, etiket, tags, doc_id, sıra_no in sonuç:
             if len(seçilen) >= k:
                 break
             if doküman_sayacı[doc_id] >= MAX_CHUNKS_PER_DOC:
                 continue
             doküman_sayacı[doc_id] += 1
             seçilen_id.add(cid)
-            seçilen.append((content, etiket, tags))
+            seçilen.append((skor, doc_id, sıra_no, content, etiket, tags))
 
         if len(seçilen) < k:
-            for cid, _, content, etiket, tags, doc_id in sonuç:
+            for cid, skor, content, etiket, tags, doc_id, sıra_no in sonuç:
                 if len(seçilen) >= k:
                     break
                 if cid in seçilen_id:
                     continue
                 seçilen_id.add(cid)
-                seçilen.append((content, etiket, tags))
+                seçilen.append((skor, doc_id, sıra_no, content, etiket, tags))
 
         if len(seçilen) < k:
             logger.info(
                 "Aday havuzu yetersiz: %d/%d chunk döndürüldü (soru: %.60s)",
                 len(seçilen), k, question,
             )
+
+        # ALAKA SIRASINDA döner. Belge sırasına dizme burada YAPILMAZ —
+        # yalnızca LLM bağlamı kurulurken uygulanır (bkz. _baglam_metni).
+        #
+        # Bu ayrım ölçümle öğrenildi: dizmeyi buraya koyduğumda recall@1
+        # %42'den %24'e düştü. Gerçek bir kalite kaybı değildi; sıralamayı
+        # bilinçli olarak bozduğumuz için "hedef ilk sırada mı" sorusu
+        # anlamını yitirmişti (@7 hiç değişmedi, küme aynıydı). Aramanın
+        # alaka sırasını koruması, sıralama kalitesini ölçebilmenin ön koşulu.
         return seçilen
+
+    @staticmethod
+    def _belge_sirasina_diz(seçilen: list[tuple]) -> list[tuple]:
+        """Aynı dokümandan gelen chunk'ları BELGE SIRASINA göre dizer.
+
+        Sonuçlar füzyon skoru sırasında geliyor; yani aynı yönetmelikten
+        MADDE 34'ten sonra MADDE 12 sunulabiliyor. Mevzuat üzerinde akıl
+        yürütmesi istenen bir modele maddeleri ters sırada vermek aktif
+        olarak kafa karıştırıcı.
+
+        Dokümanların KENDİ arasındaki sırası korunuyor (en iyi skorlu
+        doküman önce), yalnızca doküman İÇİNDE chunk_index'e göre diziliyor.
+        """
+        en_iyi: dict[str, float] = {}
+        for skor, doc_id, *_ in seçilen:
+            en_iyi[doc_id] = max(en_iyi.get(doc_id, 0.0), skor)
+        return sorted(seçilen, key=lambda r: (-en_iyi[r[1]], r[1], r[2]))
+
+    async def query_spec(self, spec, azami_karakter: int | None = None) -> str:
+        """QuerySpec ile arama yapıp bağlam metnini döner.
+
+        spec.sorgular konu ve gövdeyi AYRI sorgular olarak taşır; ikisi
+        search_many içinde RRF ile birleştirilir.
+        """
+        return await self._baglam_kur(spec.sorgular, spec.intent_type, azami_karakter)
 
     async def query(self, question: str, intent_type: str | None = None) -> str:
         """Hibrit arama sonucunu LLM'e verilecek bağlam metnine dönüştürür."""
-        parçalar = await self.search(question, intent_type)
+        return await self._baglam_kur([question], intent_type, None)
+
+    async def _baglam_kur(
+        self, sorgular: list[str], intent_type: str | None, azami_karakter: int | None
+    ) -> str:
+        """Arama + belge sırasına dizme + bağlam metni.
+
+        Belge sırasına dizme YALNIZCA burada uygulanır; search() alaka
+        sırasını korur ki sıralama kalitesi ölçülebilsin.
+        """
+        zengin = await self._ara_zengin(sorgular, intent_type, None)
+        return self._baglam_metni(
+            self._sadelestir(self._belge_sirasina_diz(zengin)), azami_karakter
+        )
+
+    @staticmethod
+    def _baglam_metni(
+        parçalar: list[tuple[str, str, list[str]]], azami_karakter: int | None = None
+    ) -> str:
+        """Chunk listesini LLM bağlam metnine çevirir.
+
+        azami_karakter verilirse bütçeyi aşan chunk'lar TAMAMEN atılır —
+        metin ortadan KESİLMEZ. Eskiden çağıran taraf `rag_context[:2500]`
+        yapıyordu ve bu, son maddeyi cümle ortasından kesip modele yarım
+        hüküm veriyordu. Belge sırasına dizmeden sonra "baştaki chunk en
+        alakalı" varsayımı da geçersiz, yani körlemesine kesmek büsbütün
+        yanlış hâle geldi.
+        """
         if not parçalar:
             return ""
+
+        if azami_karakter is not None:
+            bütçeli: list[tuple[str, str, list[str]]] = []
+            toplam = 0
+            for içerik, etiket, tags in parçalar:
+                # ayraç ve başlık payı
+                maliyet = len(içerik) + len(etiket) + 20
+                if bütçeli and toplam + maliyet > azami_karakter:
+                    continue
+                bütçeli.append((içerik, etiket, tags))
+                toplam += maliyet
+            if len(bütçeli) < len(parçalar):
+                logger.info(
+                    "Bağlam bütçesi: %d/%d chunk kullanıldı (%d karakter sınırı).",
+                    len(bütçeli), len(parçalar), azami_karakter,
+                )
+            parçalar = bütçeli
 
         context_parts = [
             f"[Kaynak {i} — {etiket}]\n{content}"
