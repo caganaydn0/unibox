@@ -47,7 +47,9 @@ class OllamaProvider(BaseLLMProvider):
             "stream": False,
             # Resmi e-posta yanıtı — yaratıcılık yerine tutarlılık istiyoruz.
             # Düşük temperature halüsinasyon ve off-topic sapmayı azaltır.
-            "options": {"temperature": 0.2, "top_p": 0.9},
+            # num_ctx: Ollama'nın varsayılanı (2048) RAG bağlamını sessizce
+            # kırpıp uydurmaya yol açıyordu — bkz. config.py:OLLAMA_NUM_CTX.
+            "options": {"temperature": 0.2, "top_p": 0.9, "num_ctx": settings.OLLAMA_NUM_CTX},
         }
         if format:
             # Ollama çıktıyı grammar ile kısıtlar — model ne üretmek isterse

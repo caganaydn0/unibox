@@ -77,10 +77,39 @@ Konu: {subject}
 
 Öğrenciye bu taslağı gönderip göndermeyeceğini sor.""",
 
+    # DİKKAT: Bu prompt uzun süre uydurma-karşıtı hiçbir kural içermiyordu.
+    # Gelen e-posta yolunda (email_analyzer.REPLY_SYSTEM_PROMPT) titizlikle
+    # kurulmuş savunma burada YOKTU ve sohbet yolu serbestçe uyduruyordu —
+    # uçtan uca testte "doktora yeterlik şartları" sorusuna, mevzuatta hiç
+    # geçmeyen 8 maddelik bir liste üretti.
+    #
+    # config.py'deki kalibrasyon notu "asıl savunma hattı eşik değil, prompt"
+    # diyor; o tespit doğru ama prompt iki yoldan yalnızca birinde vardı.
     "general": """Sen UniBox, bir üniversite AI asistanısın.
-Öğrencilere üniversite süreçleri, yönetmelikler ve genel konularda yardım ediyorsun.
-Kısa, net ve kibar yanıtlar ver. Türkçe konuş.""",
+Öğrencilere üniversite süreçleri ve yönetmelikler konusunda yardım ediyorsun.
+Kısa, net ve kibar yanıtlar ver. Türkçe konuş.
+
+KURALLAR:
+1. YALNIZCA sana "İlgili bilgi" başlığı altında verilen metne dayanarak cevap ver.
+2. O metinde BULUNMAYAN hiçbir şeyi yazma: ücret, tutar, tarih, süre, kontenjan,
+   not ortalaması, telefon, prosedür adımı, sistem menüsü, madde numarası.
+   Genel bilginden veya başka üniversitelerin uygulamasından cevap ÜRETME.
+3. Madde numarası atıfını yalnızca verilen metinde gerçekten "MADDE N" ibaresi
+   geçiyorsa yap. ASLA madde numarası uydurma.
+4. Sana hiç bilgi verilmediyse, verilen bilgi soruyla ilgisizse veya soruya net
+   cevap bulunamadıysa şunu yaz: "Bu konuda elimde kesin bilgi yok. Daha detaylı
+   bilgi için öğrenci işlerine danışabilirsiniz." Tahmin yürütme, olasılık
+   belirtme, örnek değer verme.
+5. Kişisel bilgi (TCKN, öğrenci numarası) isteme veya paylaşma.""",
 }
+
+# Bağlam bulunamadığında prompt'a eklenen not. Boş bırakmak, modelin
+# "bilgi verilmedi" durumunu fark etmemesine ve serbestçe uydurmasına yol
+# açıyordu.
+GENERAL_NO_CONTEXT = (
+    "\n\nİlgili bilgi: (bilgi tabanında bu soruyla ilgili kayıt BULUNAMADI)\n"
+    "4. kuraldaki cümleyi yaz; kendi genel bilginden cevap üretme."
+)
 
 
 def _encrypt_fields(data: dict) -> str:
@@ -164,6 +193,10 @@ async def handle_message(
             system = SYSTEM_PROMPTS["general"]
             if rag_context:
                 system += f"\n\nİlgili bilgi:\n{rag_context}"
+            else:
+                # Bağlam yokken sessiz kalmak, modelin durumu fark etmemesine
+                # ve genel bilgisinden cevap uydurmasına yol açıyordu.
+                system += GENERAL_NO_CONTEXT
             response = await llm().generate(user_message, system=system)
             return {"response": response, "state": "IDLE", "draft_id": None}
 

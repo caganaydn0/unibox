@@ -55,6 +55,14 @@ class Settings(BaseSettings):
     UNIBOX_LLM_BACKEND: str = "ollama"  # "ollama" | "llama_cpp"
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "llama3.1:8b"
+    # Ollama'nın kendi varsayılanı (2048) RAG context'ini sessizce kırpıyordu:
+    # 7 chunk'lık (~500 kelime/chunk) bağlam + sistem promptu rahatlıkla
+    # 2048 token'ı aşıyor, Ollama fazlasını mesajın BAŞINDAN atıyor — hem
+    # uydurma-karşıtı kurallar hem ilgili MADDE metni kayboluyordu. Ölçüldü:
+    # aynı soruda num_ctx=2048 (varsayılan) tamamen uydurma yanıt verdi,
+    # num_ctx=8192 ile MADDE 31'i birebir doğru özetledi. LLAMA_CPP_N_CTX ile
+    # aynı değer.
+    OLLAMA_NUM_CTX: int = 8192
     LLAMA_CPP_MODEL_PATH: str = "./models/llama-3.1-8b.gguf"
     LLAMA_CPP_N_CTX: int = 8192
     LLAMA_CPP_N_GPU_LAYERS: int = 0
