@@ -48,6 +48,17 @@ class Settings(BaseSettings):
     # Veritabanı (PostgreSQL + pgvector)
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/unibox"
 
+    # Connection pool — eskiden db/session.py içinde sabit kodluydu.
+    # pool_recycle/pool_timeout hiç yoktu: bağlantı havuzdaki bir bağlantıyı
+    # sonsuza dek canlı sayıyordu; PgBouncer/güvenlik duvarı gibi bir ara
+    # katman onu sessizce düşürürse ilk kullanan istek `pool_pre_ping` devreye
+    # girene kadar hata alıyordu. Değerler geliştirme ölçeğine göredir —
+    # üretimde eşzamanlı admin+worker sayısına göre ayarlanmalı.
+    DB_POOL_SIZE: int = 5
+    DB_MAX_OVERFLOW: int = 10
+    DB_POOL_RECYCLE: int = 1800  # saniye — bu süreden eski bağlantılar geri dönüştürülür
+    DB_POOL_TIMEOUT: int = 30    # saniye — havuzdan bağlantı bekleme üst sınırı
+
     # KVKK: Fernet şifreleme anahtarı
     FERNET_KEY: str = "CHANGE_ME_FERNET_KEY"
 
