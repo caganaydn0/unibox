@@ -1,0 +1,46 @@
+# Üretim ters proxy — Faz 6 (YOL_HARİTASI.md). Caddy TLS'i (Let's Encrypt)
+# otomatik alır/yeniler, tek gereken gerçek bir domain + 80/443'ün dışarıya
+# açık olması.
+#
+# YER TUTUCU: aşağıdaki domain ve e-posta gerçek değerlerle değiştirilmeden
+# bu dosya çalışmaz. docker-compose.prod.yml'deki NEXT_PUBLIC_API_URL /
+# NEXT_PUBLIC_WS_URL build-arg'ları da AYNI domain'e göre ayarlanmalı —
+# ikisi tutarsızsa tarayıcı yanlış origin'e bağlanmaya çalışır.
+{
+	# Let's Encrypt sertifika süre sonu bildirimleri için gerçek bir e-posta.
+	email admin@unibox.universite.edu.tr
+}
+
+unibox.universite.edu.tr {
+	encode gzip zstd
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Frame-Options "DENY"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# Yalnızca kendi origin'imiz; WS bağlantısı da aynı domain üzerinden
+		# (aşağıdaki @ws bloğu) gittiği için connect-src'ye ayrıca wss:// eklemeye
+		# gerek yok — 'self' zaten kapsıyor.
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'"
+		-Server
+	}
+
+	# Bilgi tabanı yükleme sınırı (MAX_UPLOAD_SIZE_MB=20, config.py) +
+	# multipart payı için pay bırakılmış üst sınır. Uygulama zaten kendi
+	# sınırını uyguluyor — bu, isteğin gövdesi Caddy'de şişip kaynak
+	# tüketmesin diye bir ön kapı.
+	request_body {
+		max_size 25MB
+	}
+
+	# WS bağlantıları (öğrenci sohbet + admin izleme) DOĞRUDAN backend'e —
+	# frontend'in /api/backend proxy'sinden GEÇMEZ (tarayıcı WebSocket API'si
+	# bu şekilde bağlanıyor, bkz. WsContext.tsx / chat/page.tsx). Caddı
+	# reverse_proxy WS upgrade'ini otomatik algılar, özel bir yönerge gerekmez.
+	@ws path /api/v1/chat/ws/* /api/v1/monitor/ws
+	reverse_proxy @ws backend:8000
+
+	# Geri kalan her şey (sayfalar + /api/backend/* REST proxy'si) frontend'e.
+	reverse_proxy frontend:3000
+}

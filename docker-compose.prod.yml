@@ -2,7 +2,10 @@
 #
 # docker-compose.yml (dev) ile KARIŞTIRMAYIN: mailhog yok, backend/frontend/
 # postgres/ollama portları yalnızca localhost'a bağlı — dışa açılım TEK
-# NOKTADAN, ters proxy ile yapılır (bkz. Caddyfile).
+# NOKTADAN, aşağıdaki `caddy` servisiyle yapılır (80/443, tek kamuya açık
+# servis). Domain hâlâ YER TUTUCU (unibox.universite.edu.tr) — Caddyfile ve
+# aşağıdaki build.args ile TUTARLI olmalı, gerçek domain belli olunca ikisi
+# birden güncellenmeli.
 #
 # Kullanım:
 #   docker compose -f docker-compose.prod.yml up -d --build
@@ -97,8 +100,31 @@ services:
       start_period: 15s
       retries: 3
 
+  # Tek kamuya açık servis. TLS'i (Let's Encrypt) otomatik alır/yeniler —
+  # 80/443'ün gerçekten internete açık olması ve Caddyfile'daki domain'in
+  # gerçek, bu sunucuya işaret eden bir DNS kaydı olması ŞART, aksi halde
+  # sertifika doğrulaması başarısız olur.
+  caddy:
+    image: caddy:2-alpine
+    container_name: unibox_caddy
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - frontend
+      - backend
+    restart: unless-stopped
+
 volumes:
   postgres_data:
     name: unibox_postgres_data_prod
   ollama_data:
     name: unibox_ollama_data_prod
+  caddy_data:
+    name: unibox_caddy_data_prod
+  caddy_config:
+    name: unibox_caddy_config_prod
