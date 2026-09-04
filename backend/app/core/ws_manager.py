@@ -53,7 +53,11 @@ class ConnectionManager:
     # ---- Admin kanalı --------------------------------------------------
 
     async def connect_admin(self, ws: WebSocket) -> None:
-        await ws.accept()
+        """Kimliği doğrulanmış admin WS'ini kayda ekler.
+
+        NOT: `ws.accept()` ÇAĞIRMAZ — çağıran (`monitor.py`) auth çerçevesini
+        okuyabilmek için bağlantıyı bundan önce zaten kabul etmiş olmalı.
+        """
         self._admins.add(ws)
         logger.info("Admin bağlandı. Toplam admin: %d", len(self._admins))
 

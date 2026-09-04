@@ -50,6 +50,7 @@ export interface KnowledgeDocument {
   indexed_at: string | null;
   description: string | null;
   tags_json: string;
+  chunk_count: number;
 }
 
 export interface EmailLog {
@@ -142,17 +143,29 @@ export interface ActivityEvent {
   ts: string;
 }
 
+// Öğrenci sohbet mesajı (client-side görüntüleme modeli)
+export interface ChatMessage {
+  role: "user" | "assistant" | "system";
+  content: string;
+  ts?: string;
+  draftPreview?: { subject: string; body: string };
+}
+
 // WebSocket event tipleri
 export interface WsEvent {
   type:
     | "message"
     | "state_change"
     | "draft_preview"
+    | "draft_created"
     | "email_pending_approval"
+    | "email_approved"
+    | "email_rejected"
     | "email_sent"
     | "email_failed"
     | "draft_rejected"
     | "intent_detected"
+    | "document_indexed"
     | "incoming_email_received"
     | "incoming_reply_ready"
     | "incoming_reply_sent"

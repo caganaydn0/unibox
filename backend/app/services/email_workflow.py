@@ -486,6 +486,14 @@ async def approve_draft(
     from app.tasks.queue import email_queue
     await email_queue.put(draft.id)
     logger.info("Draft %s onaylandı, kuyruğa eklendi.", draft.id)
+    # Diğer admin sekmelerinin bekleyen taslak sayacını anında güncellemesi
+    # için — eskiden bu event hiç yayınlanmıyordu, sayaç yalnızca sonraki
+    # manuel yenilemede güncelleniyordu.
+    await ws_manager.broadcast_to_admins({
+        "type": "email_approved",
+        "draft_id": draft.id,
+        "conversation_id": draft.conversation_id,
+    })
 
 
 async def reject_draft(
@@ -510,3 +518,12 @@ async def reject_draft(
         draft.conversation_id,  # conversation_id == session_token bağlantısı chat.py'de
         {"type": "draft_rejected", "reason": reason},
     )
+    # Diğer admin sekmelerinin bekleyen taslak sayacını anında güncellemesi
+    # için — eskiden bu event hiç yayınlanmıyordu, sayaç yalnızca sonraki
+    # manuel yenilemede güncelleniyordu.
+    await ws_manager.broadcast_to_admins({
+        "type": "email_rejected",
+        "draft_id": draft.id,
+        "conversation_id": draft.conversation_id,
+        "reason": reason,
+    })
