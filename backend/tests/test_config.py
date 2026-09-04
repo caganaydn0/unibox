@@ -22,6 +22,23 @@ GEÇERLİ = {
 }
 
 
+@pytest.fixture(autouse=True)
+def _cevre_dosyasi_var_olsun(tmp_path, monkeypatch):
+    """_uretimde_guvenli_mi, backend/.env'in diskte GERÇEKTEN var olup
+    olmadığını da kontrol ediyor. `_ayarlar()`'daki `_env_file=None` yalnızca
+    pydantic'in o dosyadan DEĞER okumasını engelliyor — dosyanın var olup
+    olmadığı kontrolünü etkilemiyor. Geliştirici makinesinde backend/.env
+    gerçekten var olduğu için bu görünmüyordu; CI'da (temiz checkout, .env
+    hiç yok) bu modüldeki testler SECRET_KEY/FERNET_KEY/parola/SMTP
+    kurallarını değil, farkında olmadan bu dosya kontrolünü test edip
+    başarısız oluyordu. Gerçek bir geçici dosya oluşturup _ENV_DOSYASI'nı
+    ona yönlendiriyoruz — mock değil, gerçek bir dosya.
+    """
+    sahte_env = tmp_path / ".env"
+    sahte_env.touch()
+    monkeypatch.setattr("app.config._ENV_DOSYASI", sahte_env)
+
+
 def _ayarlar(**değişiklik) -> Settings:
     # _env_file=None: geliştirici makinesindeki backend/.env testi etkilemesin
     return Settings(_env_file=None, **{**GEÇERLİ, **değişiklik})
