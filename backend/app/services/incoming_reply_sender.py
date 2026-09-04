@@ -5,7 +5,6 @@ EmailSender pattern'ini takip eder: SMTP gÃ¶nderim, audit log, KVKK PII temizliÄ
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart

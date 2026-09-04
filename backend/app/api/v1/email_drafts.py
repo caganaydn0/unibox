@@ -263,7 +263,6 @@ async def retry(
     if draft.status != EmailDraftStatus.FAILED:
         raise HTTPException(400, "Sadece FAILED taslaklar yeniden denenebilir.")
 
-    from app.db.models.email_draft import VALID_TRANSITIONS, EmailDraftStatus
     draft.status = EmailDraftStatus.APPROVED
     draft.last_error = None
     await db.commit()

@@ -27,7 +27,10 @@ UniBox is a KVKK-compliant university AI assistant that runs fully locally. It m
 ### Backend
 ```bash
 cd backend
-uv run uvicorn app.main:app --reload --port 8000  # dev server; API docs at /docs
+uv run uvicorn app.main:app --reload --port 8000 --ws-ping-timeout 300  # dev server; API docs at /docs
+# --ws-ping-timeout: uvicorn's 20s default closes the chat WebSocket (1011)
+# mid-response whenever a single LLM reply takes longer than that (measured:
+# 88-95s is common). Matches llm_provider.py's own 300s httpx timeout.
 uv run alembic upgrade head                        # run migrations
 uv run alembic revision --autogenerate -m "name"   # create migration
 uv run python ../scripts/test_smtp.py              # SMTP connectivity test

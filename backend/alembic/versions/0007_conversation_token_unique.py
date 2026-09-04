@@ -37,7 +37,7 @@ def upgrade() -> None:
     # 1. Aktif konuşmalar arasındaki jeton çakışmalarını temizle.
     #    Her jeton için en son etkin olanı tut, diğerlerini soft-delete et.
     op.execute(
-        f"""
+        """
         WITH sıralı AS (
             SELECT id,
                    ROW_NUMBER() OVER (

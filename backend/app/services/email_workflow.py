@@ -23,8 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.ws_manager import ws_manager
 from app.db.models.email_draft import EmailDraft, EmailDraftStatus, VALID_TRANSITIONS
 from app.db.models.conversation import Conversation
-from app.db.models.request_intent import RequestIntent
-from app.services.anonymizer import mask_pii, sanitize_draft_body
+from app.services.anonymizer import sanitize_draft_body
 from app.services.llm_provider import llm
 from app.services.rag_engine import RagEngine
 from app.services.rag_query import build_query
@@ -201,7 +200,6 @@ async def handle_message(
             return {"response": response, "state": "IDLE", "draft_id": None}
 
         # E-posta gerektiren yeni intent — COLLECTING_INFO başlat
-        from uuid import uuid4
         draft = EmailDraft(
             conversation_id=conversation.id,
             intent_type=intent_type,
@@ -449,7 +447,6 @@ async def _handle_draft_review(
             "recipient_email": draft.recipient_email,
         })
         # Kuyruğa ekle — admin onaylayınca worker alacak
-        from app.tasks.queue import email_queue
         # Not: email_queue'ya APPROVED sonrası eklenir, şimdi değil
         return {
             "response": "Talebiniz admin onayına gönderildi. En kısa sürede işleme alınacak.",

@@ -16,7 +16,6 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from email.header import decode_header
 from email.utils import parseaddr, parsedate_to_datetime
-from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError

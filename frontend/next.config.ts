@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Docker imajı için: .next/standalone altında minimal bir node server.js
+  // üretir (node_modules'ün tamamı değil, yalnızca kullanılanlar).
+  output: "standalone",
   // Trailing slash redirect'ini kapat — API proxy'de Auth header kaybını önler
   skipTrailingSlashRedirect: true,
   // API çağrıları Next.js üzerinden proxy'lenir (BFF pattern — KVKK / CORS)

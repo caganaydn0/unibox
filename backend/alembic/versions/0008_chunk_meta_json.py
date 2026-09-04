@@ -50,7 +50,7 @@ def upgrade() -> None:
     # ve belge sırasına dizme, chunk_index'in doküman içinde tekil ve sıralı
     # olmasına dayanacak.
     op.execute(
-        f"""
+        """
         WITH yinelenen AS (
             SELECT id,
                    ROW_NUMBER() OVER (

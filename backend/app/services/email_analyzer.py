@@ -11,7 +11,6 @@ from sqlalchemy import select
 
 from datetime import datetime
 
-from app.config import settings
 from app.core.ws_manager import ws_manager
 from app.db.models.incoming_email import IncomingEmail, IncomingEmailStatus
 from app.db.models.system_settings import SystemMode
@@ -352,7 +351,6 @@ class EmailAnalyzer:
 
         try:
             # JSON parse — LLM çeşitli formatlarda dönebilir
-            import re
             clean = raw.strip()
             # Markdown code block temizle
             if "```" in clean:
