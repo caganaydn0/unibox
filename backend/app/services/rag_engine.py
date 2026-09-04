@@ -28,6 +28,7 @@ from app.services.chunking import (
     madde_bazli_bol,
     mevzuat_mi,
 )
+from app.services.reranker import rerank as _reranker_cagir
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,7 @@ RRF_K = settings.RAG_RRF_K
 INTENT_BONUS = settings.RAG_INTENT_BONUS
 FTS_NORMALIZATION = settings.RAG_FTS_NORMALIZATION
 MAX_CHUNKS_PER_DOC = settings.RAG_MAX_CHUNKS_PER_DOC
+RERANKER_TOP_N = settings.RERANKER_TOP_N
 
 
 def _turkish_tsvector(column):
@@ -342,7 +344,11 @@ class RagEngine:
     # Sorgu (RAG retrieval)
     # ------------------------------------------------------------------ #
     async def search(
-        self, question: str, intent_type: str | None = None, top_k: int | None = None
+        self,
+        question: str,
+        intent_type: str | None = None,
+        top_k: int | None = None,
+        use_reranker: bool | None = None,
     ) -> list[tuple[str, str, list[str]]]:
         """Hibrit arama — (içerik, belge etiketi, chunk etiketleri) listesi döner.
 
@@ -358,13 +364,14 @@ class RagEngine:
         %19). "Transkript" gibi birebir geçen anahtar kelimeleri sözcüksel
         arama yakalar, anlamsal yakınlığı ise vektör araması taşır.
         """
-        return await self.search_many([question], intent_type, top_k)
+        return await self.search_many([question], intent_type, top_k, use_reranker)
 
     async def search_many(
         self,
         sorgular: list[str],
         intent_type: str | None = None,
         top_k: int | None = None,
+        use_reranker: bool | None = None,
     ) -> list[tuple[str, str, list[str]]]:
         """Birden fazla sorguyu tek bir sonuç listesinde birleştirir.
 
@@ -386,13 +393,8 @@ class RagEngine:
         if not temiz_sorgular:
             return []
 
-        görünür = (
-            KnowledgeDocument.deleted_at.is_(None),
-            KnowledgeDocument.status == ProcessingStatus.INDEXED,
-        )
-
         return self._sadelestir(
-            await self._ara_zengin(temiz_sorgular, intent_type, k)
+            await self._ara_zengin(temiz_sorgular, intent_type, k, use_reranker)
         )
 
     @staticmethod
@@ -401,7 +403,11 @@ class RagEngine:
         return [(içerik, etiket, tags) for _, _, _, içerik, etiket, tags in zengin]
 
     async def _ara_zengin(
-        self, sorgular: list[str], intent_type: str | None, top_k: int | None
+        self,
+        sorgular: list[str],
+        intent_type: str | None,
+        top_k: int | None,
+        use_reranker: bool | None = None,
     ) -> list[tuple]:
         """search_many ile aynı iş, ama doc_id/chunk_index'i de taşır.
 
@@ -434,6 +440,7 @@ class RagEngine:
 
         return await self._siralayip_sec(
             skorlar, en_yakın, vektör_çalıştı, toplam_fts, intent_type, k, temiz[0],
+            use_reranker,
         )
 
     async def _adaylari_getir(
@@ -510,6 +517,7 @@ class RagEngine:
         intent_type: str | None,
         k: int,
         günlük_metni: str,
+        use_reranker: bool | None = None,
     ) -> list[tuple[str, str, list[str]]]:
         """Birleşik aday havuzuna kapı, intent bonusu ve çeşitlilik uygular."""
         # --- Kapsam kontrolü (füzyondan SONRA, iki sinyale birden bakarak) ---
@@ -576,6 +584,33 @@ class RagEngine:
             )
 
         sonuç.sort(key=lambda r: r[1], reverse=True)
+
+        # --- Reranker (Faz 7, kill-criterion'lı — bkz. YOL_HARİTASI.md) ---
+        #
+        # ÇEŞİTLİLİK KAPISINDAN ÖNCE uygulanır: reranker RRF sırasını
+        # değiştiriyor, çeşitlilik turu bu YENİ sırayı görmeli. Sırası ters
+        # olsaydı reranker'ın öne çıkardığı bir chunk, henüz ESKİ sıraya göre
+        # uygulanmış doküman-başına sınıra takılıp elenebilirdi.
+        #
+        # CANDIDATE_POOL'un (50) tamamı değil, yalnızca ilk RERANKER_TOP_N
+        # aday gönderilir — RRF zaten alakasız olanları gerideye atmış
+        # durumda, CPU bütçesini tümüne harcamaya değmez.
+        #
+        # Reranker kapalıyken (varsayılan — ölçüm eşiği geçilene kadar) ya da
+        # başarısız/timeout olduğunda `sonuç` RRF sırasında DEĞİŞMEDEN kalır;
+        # istek hiçbir koşulda düşmez.
+        reranker_aktif = settings.RERANKER_ENABLED if use_reranker is None else use_reranker
+        if reranker_aktif and sonuç:
+            üst = sonuç[:RERANKER_TOP_N]
+            rerank_skorları = await _reranker_cagir(question, [r[2] for r in üst])
+            if rerank_skorları is not None:
+                üst = [
+                    (cid, yeni_skor, content, etiket, tags, doc_id, sıra_no)
+                    for (cid, _eski_skor, content, etiket, tags, doc_id, sıra_no), yeni_skor
+                    in zip(üst, rerank_skorları)
+                ]
+                üst.sort(key=lambda r: r[1], reverse=True)
+                sonuç = üst + sonuç[RERANKER_TOP_N:]
 
         # --- 6. Doküman çeşitliliği + doldurma turu ---
         #

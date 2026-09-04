@@ -42,6 +42,29 @@ services:
     #       devices:
     #         - capabilities: [gpu]
 
+  # Reranker — Faz 7, KİLL-CRİTERİON'LI, varsayılan KAPALI (bkz.
+  # YOL_HARİTASI.md). Ollama cross-encoder servis etmiyor; ayrı HF Text
+  # Embeddings Inference (TEI) container'ı kullanılıyor.
+  #
+  # Bu servisi kullanmak için backend/.env'de RERANKER_ENABLED=true yapın.
+  # Model ilk başlatmada otomatik indirilir (~278MB). CPU imajı — GPU
+  # kartında (RTX 3050 Ti 4GB) llama3.1:8b'ye zaten yer dar, reranker'a GPU
+  # ayırmıyoruz. API şeması doğrulandı: POST /rerank {"query","texts"} ->
+  # [{"index","score"}].
+  reranker:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    container_name: unibox_reranker
+    command: ["--model-id", "BAAI/bge-reranker-base"]
+    ports:
+      - "127.0.0.1:8090:80"
+    volumes:
+      - reranker_data:/data
+    restart: unless-stopped
+    # HEALTHCHECK YOK: imaj scratch tabanlı, içinde sh/curl/wget hiçbiri
+    # bulunmuyor (ölçüldü — mailhog'da da zaten healthcheck yok, emsalsiz
+    # değil). Hazır olup olmadığı host'tan kontrol edilir:
+    #   curl http://localhost:8090/health
+
   # MailHog — geliştirme SMTP sunucusu.
   # Giden e-postaları gerçekten göndermeden yakalar; SMTP_BACKEND=smtp +
   # SMTP_PORT=1025 ile uçtan uca gönderim akışı test edilebilir.
@@ -63,3 +86,5 @@ volumes:
     name: unibox_postgres_data
   ollama_data:
     name: unibox_ollama_data
+  reranker_data:
+    name: unibox_reranker_data

@@ -164,6 +164,22 @@ class Settings(BaseSettings):
     # ikinci bir doldurma turu sınırı gevşetiyor (bkz. rag_engine.search).
     RAG_MAX_CHUNKS_PER_DOC: int = 3
 
+    # Reranker (Faz 7, kill-criterion'lı — bkz. YOL_HARİTASI.md).
+    #
+    # Varsayılan KAPALI: ölçüm eşiği (madde@1 paired düzelen>bozulan, ≥5 soru
+    # fark) geçilene kadar production davranışını etkilemesin. Ayrı HF TEI
+    # container'ı — Ollama cross-encoder servis etmiyor, süreç içi
+    # sentence-transformers reddedildi (torch ~2.5GB, senkron, air-gapped
+    # on-prem'de HF Hub erişilemez).
+    RERANKER_ENABLED: bool = False
+    RERANKER_URL: str = "http://localhost:8090"
+    # Tek bütçe hem sohbet (≤800ms p95) hem gelen e-posta (≤5sn) için yeterli:
+    # ≤800ms zaten ≤5sn'yi sağlıyor, akışa özel ayrı bütçe gerekmiyor.
+    RERANKER_TIMEOUT_MS: int = 800
+    # RAG_CANDIDATE_POOL'un (50) tamamını CPU'da rerank etmek bütçeyi
+    # zorlayabilir; RRF sırasına göre yalnızca ilk N aday gönderilir.
+    RERANKER_TOP_N: int = 20
+
     # SMTP
     SMTP_BACKEND: str = "console"    # "console" | "smtp"
     SMTP_HOST: str = "localhost"
