@@ -1,10 +1,19 @@
-from fastapi import APIRouter, HTTPException, status
+import logging
+
+from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel
 
 from app.config import settings
-from app.core.security import create_access_token, create_refresh_token, decode_refresh_token
+from app.core.ratelimit import LOGIN_LIMIT, limiter
+from app.core.security import (
+    create_access_token,
+    create_refresh_token,
+    decode_refresh_token,
+    kimlik_dogrula,
+)
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class LoginRequest(BaseModel):
@@ -19,16 +28,26 @@ class TokenResponse(BaseModel):
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(req: LoginRequest):
+@limiter.limit(LOGIN_LIMIT)
+async def login(req: LoginRequest, request: Request):
     """Admin giriş — kullanıcı adı + şifre → JWT."""
-    if req.username != settings.ADMIN_USERNAME or req.password != settings.ADMIN_PASSWORD:
+    if not kimlik_dogrula(req.username, req.password):
+        # Başarısız denemeleri logla: kaba kuvvet saldırısının tek görünür izi.
+        # Parola ASLA loglanmaz.
+        logger.warning(
+            "Başarısız giriş denemesi: kullanıcı=%r, kaynak=%s",
+            req.username[:32], request.client.host if request.client else "?",
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Hatalı kullanıcı adı veya şifre.",
         )
+    logger.info("Admin girişi başarılı: %s", req.username)
+    # Jetonun öznesi her zaman yapılandırılmış admin adı — istemcinin
+    # gönderdiği değer değil (büyük/küçük harf farkı vb. taşımasın).
     return TokenResponse(
-        access_token=create_access_token(req.username),
-        refresh_token=create_refresh_token(req.username),
+        access_token=create_access_token(settings.ADMIN_USERNAME),
+        refresh_token=create_refresh_token(settings.ADMIN_USERNAME),
     )
 
 

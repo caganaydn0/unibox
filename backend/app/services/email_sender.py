@@ -17,7 +17,7 @@ from app.config import settings
 from app.db.models.email_draft import EmailDraft, EmailDraftStatus
 from app.db.models.email_log import EmailLog
 from app.db.session import AsyncSessionLocal
-from app.services.anonymizer import mask_body_for_log
+from app.services.anonymizer import mask_body_for_log, mask_email_address
 
 logger = logging.getLogger(__name__)
 
@@ -111,12 +111,18 @@ class EmailSender:
     async def _smtp_send(self, to_email: str, subject: str, body: str) -> None:
         """SMTP üzerinden mail gönder (veya console modunda logla)."""
         # Console modu — Docker/SMTP gerektirmez
+        #
+        # KVKK: gövde ve alıcı adresi MASKELENEREK loglanır. Bu veri
+        # veritabanında Fernet ile şifreleniyor; aynı veriyi düz metin olarak
+        # log dosyasına yazmak o korumayı anlamsız kılar. SMTP_BACKEND
+        # varsayılanı "console" olduğu için üretimde yanlışlıkla bu değerle
+        # kalınması gerçekçi bir risk.
         if settings.SMTP_BACKEND == "console":
             logger.info("=" * 60)
             logger.info("EMAIL [CONSOLE MODE]")
-            logger.info("To: %s", to_email)
+            logger.info("To: %s", mask_email_address(to_email))
             logger.info("Subject: %s", subject)
-            logger.info("Body:\n%s", body)
+            logger.info("Body:\n%s", mask_body_for_log(body))
             logger.info("=" * 60)
             return
 

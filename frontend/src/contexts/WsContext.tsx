@@ -28,6 +28,7 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
   const [pendingDraftCount, setPendingDraftCount] = useState(0);
   const [systemMode, setSystemMode] = useState<SystemMode | null>(null);
   const [wsUrl, setWsUrl] = useState("");
+  const tokenRef = useRef<string | null>(null);
 
   const refreshPendingCount = useCallback(() => {
     api
@@ -53,10 +54,14 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const token = localStorage.getItem("unibox_token");
     if (token) {
+      // Jeton artık URL'de DEĞİL (uvicorn/proxy loglarına düz metin JWT
+      // düşmesin diye) — bağlantı açılınca ilk çerçeve olarak gönderiliyor,
+      // bkz. getInitialMessage aşağıda.
+      tokenRef.current = token;
       const base =
         (process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000") +
         "/api/v1/monitor/ws";
-      setWsUrl(`${base}?token=${token}`);
+      setWsUrl(base);
     }
     refreshPendingCount();
     refreshDraftCount();
@@ -90,7 +95,12 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
     [refreshPendingCount, refreshDraftCount, refreshSystemMode]
   );
 
-  useWebSocket(wsUrl, { onMessage: handleWsEvent, enabled: !!wsUrl });
+  useWebSocket(wsUrl, {
+    onMessage: handleWsEvent,
+    enabled: !!wsUrl,
+    getInitialMessage: () =>
+      tokenRef.current ? { type: "auth", token: tokenRef.current } : null,
+  });
 
   const subscribe = useCallback((handler: (event: WsEvent) => void) => {
     handlers.current.add(handler);

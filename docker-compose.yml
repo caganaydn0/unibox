@@ -1,28 +1,37 @@
-version: "3.9"
-
 services:
   # PostgreSQL + pgvector — Veritabanı + vektör araması
   postgres:
     image: pgvector/pgvector:pg16
     container_name: unibox_postgres
     ports:
-      - "5432:5432"
+      # KVKK: Yalnızca localhost'a bağla. "5432:5432" yazılırsa Docker portu
+      # 0.0.0.0'a açar ve veritabanı tüm yerel ağdan erişilebilir hale gelir.
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD tanimli degil - .env dosyasina ekleyin}
       POSTGRES_DB: unibox
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
 
   # Ollama — Yerel LLM + Embedding
-  # Chat modeli: docker exec unibox_ollama ollama pull llama3.1:8b
-  # Embedding modeli: docker exec unibox_ollama ollama pull nomic-embed-text
+  #
+  # DİKKAT: Bu geliştirme makinesinde host'ta da bir Ollama kurulu ve
+  # 127.0.0.1:11434'ü tutuyor. Uygulama VARSAYILAN OLARAK HOST'TAKİNİ
+  # kullanır (backend/.env -> OLLAMA_BASE_URL=http://localhost:11434),
+  # çünkü bge-m3 orada yüklü. Bu container yalnızca host'ta Ollama
+  # olmayan makineler için; çakışmasın diye 11435'e alındı.
+  #
+  # Bu container'ı kullanacaksanız ÖNCE modelleri indirin, sonra .env'i
+  # 11435'e çevirin. bge-m3 olmadan RAG hiçbir sonuç döndürmez:
+  #   docker exec unibox_ollama ollama pull llama3.1:8b
+  #   docker exec unibox_ollama ollama pull bge-m3
   ollama:
     image: ollama/ollama:latest
     container_name: unibox_ollama
     ports:
-      - "11434:11434"
+      - "127.0.0.1:11435:11434"
     volumes:
       - ollama_data:/root/.ollama
     restart: unless-stopped
@@ -33,6 +42,49 @@ services:
     #       devices:
     #         - capabilities: [gpu]
 
+  # Reranker — Faz 7, KİLL-CRİTERİON'LI, varsayılan KAPALI (bkz.
+  # YOL_HARİTASI.md). Ollama cross-encoder servis etmiyor; ayrı HF Text
+  # Embeddings Inference (TEI) container'ı kullanılıyor.
+  #
+  # Bu servisi kullanmak için backend/.env'de RERANKER_ENABLED=true yapın.
+  # Model ilk başlatmada otomatik indirilir (~278MB). CPU imajı — GPU
+  # kartında (RTX 3050 Ti 4GB) llama3.1:8b'ye zaten yer dar, reranker'a GPU
+  # ayırmıyoruz. API şeması doğrulandı: POST /rerank {"query","texts"} ->
+  # [{"index","score"}].
+  reranker:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    container_name: unibox_reranker
+    command: ["--model-id", "BAAI/bge-reranker-base"]
+    ports:
+      - "127.0.0.1:8090:80"
+    volumes:
+      - reranker_data:/data
+    restart: unless-stopped
+    # HEALTHCHECK YOK: imaj scratch tabanlı, içinde sh/curl/wget hiçbiri
+    # bulunmuyor (ölçüldü — mailhog'da da zaten healthcheck yok, emsalsiz
+    # değil). Hazır olup olmadığı host'tan kontrol edilir:
+    #   curl http://localhost:8090/health
+
+  # MailHog — geliştirme SMTP sunucusu.
+  # Giden e-postaları gerçekten göndermeden yakalar; SMTP_BACKEND=smtp +
+  # SMTP_PORT=1025 ile uçtan uca gönderim akışı test edilebilir.
+  # Gelen kutusu: http://localhost:8025
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: unibox_mailhog
+    ports:
+      - "127.0.0.1:1025:1025"   # SMTP
+      - "127.0.0.1:8025:8025"   # Web arayüzü
+    restart: unless-stopped
+
 volumes:
+  # Açık isim veriyoruz: aksi halde Compose volume adının başına proje adını
+  # (klasör adı) ekler. Bu proje "unibox_1.1" klasöründe olduğu için
+  # varsayılan davranış "unibox_11_postgres_data" adında BOŞ bir volume
+  # oluşturur ve mevcut veritabanı kaybolmuş gibi görünür.
   postgres_data:
+    name: unibox_postgres_data
   ollama_data:
+    name: unibox_ollama_data
+  reranker_data:
+    name: unibox_reranker_data

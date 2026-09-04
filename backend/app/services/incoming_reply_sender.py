@@ -5,7 +5,6 @@ EmailSender pattern'ini takip eder: SMTP gönderim, audit log, KVKK PII temizli�
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
@@ -19,7 +18,7 @@ from app.core.ws_manager import ws_manager
 from app.db.models.incoming_email import IncomingEmail, IncomingEmailStatus
 from app.db.models.email_log import EmailLog
 from app.db.session import AsyncSessionLocal
-from app.services.anonymizer import mask_body_for_log
+from app.services.anonymizer import mask_body_for_log, mask_email_address
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +75,14 @@ class IncomingReplySender:
                     draft_id=None,  # Gelen email yanıtı, draft yok
                     incoming_email_id=ie.id,
                     recipient_email_hash=hashlib.sha256(to_email.encode()).hexdigest(),
-                    recipient_display=to_email,
+                    # KVKK: email_log.py:35 "recipient_email kurumsal adres
+                    # olduğu için saklanabilir" diyor. GİDEN akışta bu doğru
+                    # (alıcı öğrenci işleri), ama BURADA alıcı öğrencinin
+                    # KİŞİSEL adresi. Aşağıda sender_email_enc'i KVKK gereği
+                    # siliyoruz; aynı adresi log tablosuna düz metin yazmak o
+                    # silmeyi anlamsız kılardı. Maskelenmiş hâli saklanıyor,
+                    # eşleştirme gerekirse recipient_email_hash var.
+                    recipient_display=mask_email_address(to_email),
                     subject=ie.reply_subject or "",
                     body_anonymized=mask_body_for_log(ie.reply_body or ""),
                     retention_expires_at=datetime.utcnow()
@@ -126,13 +132,16 @@ class IncomingReplySender:
         in_reply_to: str | None = None,
     ) -> str | None:
         """SMTP ile yanıt gönder. In-Reply-To header ile thread'e bağla."""
+        # KVKK: alıcı adresi Fernet ile şifrelenmiş hâlden ÇÖZÜLMÜŞ gerçek
+        # öğrenci adresi. Maskelenmeden loglanırsa veritabanındaki şifreleme
+        # anlamını yitirir. Bkz. email_sender._smtp_send'deki aynı not.
         if settings.SMTP_BACKEND == "console":
             logger.info("=" * 60)
             logger.info("REPLY EMAIL [CONSOLE MODE]")
-            logger.info("To: %s", to_email)
+            logger.info("To: %s", mask_email_address(to_email))
             logger.info("Subject: %s", subject)
             logger.info("In-Reply-To: %s", in_reply_to)
-            logger.info("Body:\n%s", body)
+            logger.info("Body:\n%s", mask_body_for_log(body))
             logger.info("=" * 60)
             return None
 

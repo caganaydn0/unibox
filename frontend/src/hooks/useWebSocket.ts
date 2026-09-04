@@ -6,6 +6,12 @@ import type { WsEvent } from "@/types";
 interface UseWebSocketOptions {
   onMessage: (event: WsEvent) => void;
   enabled?: boolean;
+  onClose?: (event: CloseEvent) => void;
+  // Bağlantı açılır açılmaz (ilk uygulama çerçevesi olarak) gönderilecek
+  // veriyi döner. Tarayıcı WebSocket API'si el sıkışmaya özel header
+  // ekleyemediği için kimlik doğrulama jetonlarını URL yerine bu yolla
+  // taşımak için kullanılır (bkz. WsContext.tsx).
+  getInitialMessage?: () => object | null;
 }
 
 /**
@@ -14,7 +20,7 @@ interface UseWebSocketOptions {
  * - React StrictMode çift çağrısına karşı korumalı
  */
 export function useWebSocket(url: string, options: UseWebSocketOptions) {
-  const { onMessage, enabled = true } = options;
+  const { onMessage, enabled = true, onClose, getInitialMessage } = options;
   const wsRef = useRef<WebSocket | null>(null);
   const retryDelay = useRef(1000);
   const mountedRef = useRef(true);
@@ -30,6 +36,8 @@ export function useWebSocket(url: string, options: UseWebSocketOptions) {
       ws.onopen = () => {
         if (!mountedRef.current) return;
         retryDelay.current = 1000;
+        const initial = getInitialMessage?.();
+        if (initial) ws.send(JSON.stringify(initial));
         setReadyState(WebSocket.OPEN);
       };
 
@@ -47,9 +55,10 @@ export function useWebSocket(url: string, options: UseWebSocketOptions) {
         }
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         if (!mountedRef.current) return;
         setReadyState(WebSocket.CLOSED);
+        onClose?.(event);
         // Üstel geri çekilme ile yeniden bağlan
         const delay = retryDelay.current;
         retryDelay.current = Math.min(delay * 2, 30000);
@@ -64,7 +73,7 @@ export function useWebSocket(url: string, options: UseWebSocketOptions) {
       // Bağlantı hatası — yeniden dene
       setTimeout(connect, retryDelay.current);
     }
-  }, [url, enabled, onMessage]);
+  }, [url, enabled, onMessage, onClose, getInitialMessage]);
 
   useEffect(() => {
     mountedRef.current = true;

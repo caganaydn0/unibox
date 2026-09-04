@@ -9,7 +9,7 @@ import asyncio
 import json
 import logging
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, HTTPException
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.core.security import decode_access_token
 from app.core.ws_manager import ws_manager
@@ -18,19 +18,49 @@ from app.config import settings
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+# İstemci bağlandıktan sonra auth çerçevesini göndermesi için tanınan süre.
+AUTH_TIMEOUT_SECONDS = 10.0
+
 
 @router.websocket("/ws")
-async def monitor_websocket(
-    websocket: WebSocket,
-    token: str = Query(...),
-):
+async def monitor_websocket(websocket: WebSocket) -> None:
     """Admin izleme WebSocket.
 
-    Bağlanmak için URL: ws://host/api/v1/monitor/ws?token=<access_token>
-    Server-push only: admin sadece alır, gönderemez.
+    Bağlanmak için URL: ws://host/api/v1/monitor/ws (jeton URL'DE DEĞİL).
+    Bağlantı kurulduktan sonra ilk çerçeve olarak
+    {"type":"auth","token":"<access_token>"} beklenir.
+
+    Eskiden jeton ?token= query string'inde taşınıyordu; bu, uvicorn access
+    log'una ve araya giren her ters proxy'nin loguna JWT'yi düz metin
+    yazıyordu. Tarayıcı WebSocket API'si el sıkışmaya özel bir HTTP header
+    ekleyemediği için gerçek bir "header'a taşıma" mümkün değil — pratik
+    eşdeğeri, jetonu URL'den tamamen çıkarıp bağlantı KURULDUKTAN SONRA ilk
+    uygulama mesajıyla göndermek.
+
+    Origin kontrolü: WS el sıkışması CORS'a tabi değil — tarayıcı çapraz-origin
+    bir WS bağlantısını kendiliğinden engellemiyor, sunucu reddetmeli.
+    `settings.cors_origin_listesi` (main.py'deki CORSMiddleware ile aynı
+    liste) kullanılıyor; üretimde CORS_ORIGINS ayarlanmamışsa liste boş döner
+    ve TÜM bağlantılar reddedilir (sessiz açık sistem yerine gürültülü hata).
     """
-    # JWT doğrulama
-    payload = decode_access_token(token)
+    origin = websocket.headers.get("origin")
+    if origin not in settings.cors_origin_listesi:
+        # accept() öncesi close — el sıkışma reddedilir.
+        await websocket.close(code=4403, reason="Origin izinli değil")
+        return
+
+    await websocket.accept()
+
+    token: str | None = None
+    try:
+        raw = await asyncio.wait_for(websocket.receive_text(), timeout=AUTH_TIMEOUT_SECONDS)
+        frame = json.loads(raw)
+        if frame.get("type") == "auth":
+            token = frame.get("token")
+    except Exception:
+        token = None
+
+    payload = decode_access_token(token) if token else None
     if not payload:
         await websocket.close(code=4001, reason="Yetkisiz")
         return

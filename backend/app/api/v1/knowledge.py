@@ -2,17 +2,20 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
-from pydantic import BaseModel, field_serializer, model_validator
+from pydantic import BaseModel, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.core.ratelimit import UPLOAD_LIMIT, limiter
 from app.db.models.knowledge_document import KnowledgeDocument, ProcessingStatus
 from app.deps import get_current_admin, get_db
 
@@ -44,8 +47,142 @@ class DocumentOut(BaseModel):
         return self
 
 
+# --------------------------------------------------------------------------- #
+# Yükleme doğrulama yardımcıları
+# --------------------------------------------------------------------------- #
+
+# Dosya imzaları (magic bytes). python-magic bağımlılık olarak duruyordu ama
+# HİÇBİR YERDEN import edilmiyordu; Content-Type ise tamamen istemci
+# kontrolündedir. Küçük ve bağımlılıksız bir imza kontrolü, yanlış etiketlenmiş
+# veya kasten gizlenmiş dosyaları yakalamak için yeterli.
+_IMZALAR: list[tuple[bytes, str]] = [
+    (b"%PDF-", "application/pdf"),
+    # DOCX bir ZIP arşivi
+    (b"PK\x03\x04", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+]
+
+_UZANTI_MIME = {
+    ".pdf": "application/pdf",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".txt": "text/plain",
+    ".md": "text/markdown",
+    ".markdown": "text/markdown",
+}
+
+
+async def _sinirli_oku(file: UploadFile, azami: int) -> bytes:
+    """Dosyayı parça parça okur, sınırı aşınca ERKEN keser."""
+    parçalar: list[bytes] = []
+    toplam = 0
+    while parça := await file.read(1024 * 1024):
+        toplam += len(parça)
+        if toplam > azami:
+            raise HTTPException(
+                413, f"Maksimum dosya boyutu {settings.MAX_UPLOAD_SIZE_MB}MB."
+            )
+        parçalar.append(parça)
+    if not toplam:
+        raise HTTPException(400, "Boş dosya yüklenemez.")
+    return b"".join(parçalar)
+
+
+def _reddet(sebep: str) -> None:
+    raise HTTPException(
+        415, f"{sebep} İzin verilenler: PDF, DOCX, TXT, MD."
+    )
+
+
+def _dogrulanmis_mime(içerik: bytes, bildirilen: str | None, dosya_adı: str) -> str:
+    """Gerçek dosya tipini İÇERİKTEN belirler.
+
+    İstemcinin bildirdiği Content-Type KARAR VERİCİ DEĞİLDİR — tamamen
+    istemci kontrolündedir. Erken bir taslakta imzasız dosyalar için
+    bildirilen tipe geri düşülüyordu ve bu, "application/pdf" diye bildirilen
+    bir Windows çalıştırılabilirinin kabul edilmesine yol açıyordu (testle
+    yakalandı).
+
+    Kural: ikili tipler İMZA TAŞIMAK ZORUNDA. İmza yoksa dosya olsa olsa
+    metindir ve metin olduğu ayrıca doğrulanır.
+    """
+    for imza, mime in _IMZALAR:
+        if içerik.startswith(imza):
+            if mime not in settings.allowed_mime_types:
+                _reddet(f"Desteklenmeyen dosya tipi: {mime}.")
+            return mime
+
+    uzantı = Path(dosya_adı).suffix.lower()
+    uzantı_mime = _UZANTI_MIME.get(uzantı)
+
+    # .pdf/.docx uzantılı ama imzası yok: ya bozuk ya da kasten yanlış adlandırılmış
+    if uzantı_mime and not uzantı_mime.startswith("text/"):
+        _reddet(
+            f"Dosya '{uzantı}' uzantılı ama içeriği o biçimde değil "
+            f"(imza bulunamadı)."
+        )
+
+    # Buradan sonrası yalnızca metin olabilir. Uzantı tanınmıyorsa istemcinin
+    # beyanı YALNIZCA metin yönünde kabul edilir — ve içerik ayrıca doğrulanır.
+    if uzantı_mime:
+        aday = uzantı_mime
+    elif bildirilen and bildirilen.startswith("text/"):
+        aday = "text/plain"
+    else:
+        _reddet(f"Dosya tipi belirlenemedi (uzantı: '{uzantı or 'yok'}').")
+
+    örnek = içerik[:8192]
+    if not _metin_gibi_mi(örnek):
+        _reddet("Dosya metin gibi görünmüyor (ikili içerik).")
+    return aday
+
+
+# Metinde bulunması normal olan kontrol karakterleri
+_IZINLI_KONTROL = {0x09, 0x0A, 0x0B, 0x0C, 0x0D}
+
+
+def _metin_gibi_mi(örnek: bytes) -> bool:
+    """İçerik gerçekten metin mi?
+
+    Yalnızca NUL baytına bakmak yetmiyor: kısa ikili başlıklar (ELF, sınıf
+    dosyaları) NUL içermeden de geçebiliyor ve UTF-8 olarak çözülebiliyor
+    (testle yakalandı). Gerçek bir metin dosyasında ise 0x00-0x1F aralığında
+    sekme/satır sonu dışında karakter bulunmaz — git'in ikili dosya
+    sezgisinin aynısı.
+    """
+    if not örnek:
+        return False
+    if any(b < 0x20 and b not in _IZINLI_KONTROL for b in örnek):
+        return False
+    if 0x7F in örnek:          # DEL — metinde yeri yok
+        return False
+    for kodlama in ("utf-8", "cp1254"):   # cp1254: Türk kurumlarında yaygın
+        try:
+            örnek.decode(kodlama)
+            return True
+        except UnicodeDecodeError:
+            continue
+    return False
+
+
+def _dogrulanmis_etiketler(ham: str) -> str:
+    """tags alanı doğrulanmadan tags_json'a yazılıyordu.
+
+    Bozuk JSON, arama sırasında rag_engine'deki geniş except ile sessizce
+    []'ye düşüyor ve etiketler fark edilmeden kayboluyordu. Yükleme anında
+    reddetmek, sessiz kayıptan iyidir.
+    """
+    try:
+        değer = json.loads(ham or "[]")
+    except json.JSONDecodeError:
+        raise HTTPException(422, "tags geçerli bir JSON dizisi olmalı.")
+    if not isinstance(değer, list) or not all(isinstance(e, str) for e in değer):
+        raise HTTPException(422, "tags yalnızca metin öğelerden oluşan bir dizi olmalı.")
+    return json.dumps(değer, ensure_ascii=False)
+
+
 @router.post("/documents", status_code=202)
+@limiter.limit(UPLOAD_LIMIT)
 async def upload_document(
+    request: Request,
     file: UploadFile = File(...),
     description: Optional[str] = Form(None),
     tags: str = Form("[]"),  # JSON array string
@@ -54,19 +191,15 @@ async def upload_document(
 ):
     """Doküman yükle (PDF/DOCX/TXT/MD). 202 Accepted döner, indeksleme arka planda."""
 
-    # Boyut kontrolü
-    content = await file.read()
-    if len(content) > settings.upload_max_bytes:
-        raise HTTPException(413, f"Maksimum dosya boyutu {settings.MAX_UPLOAD_SIZE_MB}MB.")
+    # Boyut kontrolü — AKIŞ HÂLİNDE.
+    # Eskiden `await file.read()` tüm gövdeyi okuyup SONRA boyuta bakıyordu:
+    # 2 GB'lık bir POST tamamen belleğe/diske alınıp ardından reddediliyordu.
+    # Uygulama önünde başka bir sınır da yok (ters vekil yapılandırması hâlâ
+    # eklenmedi), yani tek koruma buydu.
+    content = await _sinirli_oku(file, settings.upload_max_bytes)
 
-    # MIME tip kontrolü
-    mime = file.content_type or "application/octet-stream"
-    if mime not in settings.allowed_mime_types:
-        raise HTTPException(
-            415,
-            f"Desteklenmeyen dosya tipi: {mime}. "
-            f"İzin verilenler: PDF, DOCX, TXT, MD",
-        )
+    safe_filename = Path(file.filename or "document").name
+    mime = _dogrulanmis_mime(content, file.content_type, safe_filename)
 
     # SHA-256 duplikat kontrolü
     sha256 = hashlib.sha256(content).hexdigest()
@@ -76,11 +209,12 @@ async def upload_document(
     if existing.scalar_one_or_none():
         raise HTTPException(409, "Bu dosya zaten yüklü (SHA-256 eşleşti).")
 
-    # DB kaydı oluştur — PDF BYTEA olarak saklanır
-    safe_filename = Path(file.filename or "document").name
+    tags = _dogrulanmis_etiketler(tags)
+
+    # DB kaydı oluştur — dosya BYTEA olarak saklanır
     doc = KnowledgeDocument(
         filename=safe_filename,
-        original_filename=file.filename or safe_filename,
+        original_filename=safe_filename,
         file_data=content,
         file_size_bytes=len(content),
         mime_type=mime,
@@ -140,13 +274,24 @@ async def download_document(
     db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_admin),
 ):
-    """Orijinal PDF dosyasını indir."""
+    """Orijinal dosyayı indir."""
     doc = await _get_doc_or_404(db, doc_id)
+
+    # Dosya adı BAŞLIĞA doğrudan gömülüyordu. İçinde tırnak veya satır sonu
+    # olan bir ad başlık enjeksiyonuna açıktı. RFC 6266: ASCII'ye indirgenmiş
+    # güvenli bir ad + UTF-8 için ayrı filename* parametresi.
+    ad = Path(doc.original_filename or "belge").name
+    ascii_ad = "".join(k if 32 <= ord(k) < 127 and k not in '"\\' else "_" for k in ad)
     return Response(
         content=doc.file_data,
         media_type=doc.mime_type,
         headers={
-            "Content-Disposition": f'attachment; filename="{doc.original_filename}"'
+            "Content-Disposition": (
+                f'attachment; filename="{ascii_ad}"; '
+                f"filename*=UTF-8''{quote(ad, safe='')}"
+            ),
+            # Tarayıcı içerik tipini tahmin edip HTML gibi çalıştırmasın
+            "X-Content-Type-Options": "nosniff",
         },
     )
 

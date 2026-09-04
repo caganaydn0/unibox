@@ -8,7 +8,6 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.ws_manager import ws_manager
-from app.db.models.conversation import Conversation
 from app.db.models.email_draft import EmailDraft, EmailDraftStatus
 from app.db.models.email_log import EmailLog
 from app.db.models.incoming_email import IncomingEmail, IncomingEmailStatus
